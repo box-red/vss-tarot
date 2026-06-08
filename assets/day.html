@@ -79,6 +79,7 @@
             align-items: center;
         }
 
+
         /* 单张卡牌属性 */
         .card-wrapper {
             position: absolute;
@@ -526,13 +527,76 @@
         }
 
         @media (max-width: 768px) {
-            .carousel-container { width: 140px; height: 243px; }
-            .card-wrapper { width: 140px; height: 243px; }
-            .card-front .icon { font-size: 3.5rem; font-size: 1.1rem;}
-            .card-back::after { font-size: 2.5rem; }
-            .hint-text { font-size: 1rem; }
+            /* 缩小卡牌整体尺寸 - 匹配JS动态值 (160+35=195px步长) */
+            .carousel-container { width: 160px; height: 279px; }
+            .card-wrapper { width: 160px; height: 279px; }
+
+            /* 缩小背面 */
+            .card-back::after { font-size: 2rem; }
+            .card-back::before { inset: 8px; border-radius: 5px; }
+
+            /* 正面边框 */
+            .card-front { border-width: 2px; border-radius: 10px; }
+            .card-front .border-ornament { inset: 4px; border-radius: 5px; }
+            .card-front .border-ornament::before,
+            .card-front .border-ornament::after { font-size: 0.7rem; }
+
+            /* 顶部数字 */
+            .card-front .card-numeral { font-size: 0.8rem; padding: 3px 0 1px; letter-spacing: 2px; }
+
+            /* SVG艺术区 */
+            .card-front .card-art svg { max-height: 130px; }
+
+            /* 铭牌 */
+            .card-front .card-nameplate { width: 88%; margin-bottom: 5px; padding: 4px 0; }
+            .card-front .cn-name { font-size: 0.75rem; letter-spacing: 1px; }
+            .card-front .cn-keyword { font-size: 0.5rem; }
+
+            /* 小阿卡纳 pip */
+            .card-front .pip-symbol { font-size: 1rem !important; }
+            .pip-symbol.large { font-size: 1.4rem !important; }
+            .pip-symbol.medium { font-size: 1.1rem !important; }
+            .pip-symbol.small { font-size: 0.85rem !important; }
+
+            /* 提示文字 */
+            .hint-text { font-size: 0.85rem; letter-spacing: 1px; }
+
+            /* UI层 */
+            .ui-layer { padding: 20px 0; }
+            .stage-2d { height: 55vh; }
+
+            /* 历史面板 */
             .history-toggle { top: 10px; right: 10px; width: 36px; height: 36px; font-size: 1rem; }
             .history-panel { width: 280px; max-width: 80vw; }
+            .history-header { padding: 14px 16px; }
+            .history-header h3 { font-size: 1rem; }
+            .history-item { padding: 10px 12px; gap: 8px; }
+            .history-item .hi-icon { font-size: 1.5rem; }
+            .history-item .hi-name { font-size: 0.8rem; }
+        }
+
+        /* 小屏手机额外适配 */
+        @media (max-width: 400px) {
+            .carousel-container { width: 130px; height: 227px; }
+            .card-wrapper { width: 130px; height: 227px; }
+            .card-front .card-numeral { font-size: 0.7rem; padding: 2px 0 0; }
+            .card-front .card-art svg { max-height: 105px; }
+            .card-front .card-nameplate { width: 92%; padding: 3px 0; }
+            .card-front .cn-name { font-size: 0.65rem; }
+            .card-front .cn-keyword { font-size: 0.45rem; }
+            .card-back::after { font-size: 1.6rem; }
+            .card-back::before { inset: 6px; }
+            .card-front .border-ornament { inset: 3px; }
+            .card-front .border-ornament::before,
+            .card-front .border-ornament::after { font-size: 0.55rem; }
+            .card-front .pip-symbol { font-size: 0.8rem !important; }
+            .pip-symbol.large { font-size: 1.1rem !important; }
+            .pip-symbol.medium { font-size: 0.9rem !important; }
+            .pip-symbol.small { font-size: 0.7rem !important; }
+            .hint-text { font-size: 0.7rem; }
+            .stage-2d { height: 50vh; }
+            .ui-layer { padding: 10px 0; }
+            .history-panel { width: 260px; max-width: 85vw; }
         }
     </style>
 </head>
@@ -621,13 +685,23 @@
 
         // --- 2. 核心线性几何与无限长廊配置 ---
         const totalCards = 78;
-        const cardWidth = 260; 
-        const targetGap = 50;  
-        const stepDistance = cardWidth + targetGap; // 单步步长 310px
-        const totalLength = totalCards * stepDistance; // 整个牌阵总长度 24180px
-        
+        let cardWidth, targetGap, stepDistance, totalLength;
+
+        function updateSizing() {
+            const vw = window.innerWidth;
+            if (vw <= 400) {
+                cardWidth = 130; targetGap = 25;
+            } else if (vw <= 768) {
+                cardWidth = 160; targetGap = 35;
+            } else {
+                cardWidth = 260; targetGap = 50;
+            }
+            stepDistance = cardWidth + targetGap;
+            totalLength = totalCards * stepDistance;
+        }
+
         const container = document.getElementById('container');
-        let currentXOffset = 0; 
+        let currentXOffset = 0;
         let hasSelected = false;
         let selectedCard = null;
 
@@ -893,8 +967,19 @@
 
         // 初始状态往左偏置 2.5 张牌的物理步长
         // 使得一开始屏幕上正中间就完美展示前 6 张大牌，并且左右双向都可以无限拉动！
+        updateSizing();
         currentXOffset = -(2.5 * stepDistance);
         updateLinearLayout();
+
+        // 窗口大小变化时重新计算间距
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                updateSizing();
+                updateLinearLayout();
+            }, 200);
+        });
 
         // --- 4. 抽牌核心业务交互 ---
         const hintText = document.getElementById('hint');
