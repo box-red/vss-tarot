@@ -31,7 +31,7 @@
             -webkit-touch-callout: none;
         }
 
-        #bgVideo {
+        #bgImage {
             position: fixed;
             top: 0;
             left: 0;
@@ -628,10 +628,8 @@
 
     <canvas id="particleCanvas"></canvas>
 
-    <!-- 视频背景 -->
-    <video id="bgVideo" autoplay muted loop playsinline preload="auto">
-        <source src="bg.mp4" type="video/mp4">
-    </video>
+    <!-- 图片背景 -->
+    <img id="bgImage" src="bg.jpg" alt="">
 
     <!-- 历史浏览切换按钮 -->
     <button class="history-toggle" id="historyToggle" title="历史浏览">📜<span class="badge" id="historyBadge" style="display:none">0</span></button>
