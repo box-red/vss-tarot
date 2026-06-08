@@ -1,0 +1,892 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>幽灵猫桌面宠物</title>
+<style>
+:root {
+  --ink: #1d2228;
+  --muted: #69717b;
+  --panel: rgba(255, 255, 255, 0.78);
+  --line: rgba(29, 34, 40, 0.12);
+  --blue: #456fc9;
+  --brown: #6b3c2e;
+  --cream: #f4dfbc;
+  --green: #6cbf9d;
+  --pink: #dd7d91;
+  --shadow: 0 18px 55px rgba(36, 41, 46, 0.18);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  overflow: hidden;
+  color: var(--ink);
+  font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", Arial, sans-serif;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0.42)),
+    radial-gradient(circle at 18% 18%, rgba(108, 191, 157, 0.38), transparent 26%),
+    radial-gradient(circle at 78% 22%, rgba(221, 125, 145, 0.34), transparent 25%),
+    linear-gradient(135deg, #e6f1f0 0%, #f7e9d1 48%, #dee9f4 100%);
+}
+
+button,
+input {
+  font: inherit;
+}
+
+#desktop {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.top-dock {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.66);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: 0 12px 35px rgba(33, 40, 46, 0.12);
+  backdrop-filter: blur(16px);
+}
+
+.tool {
+  width: 42px;
+  height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  color: #2f3a45;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.tool:hover,
+.tool.active {
+  transform: translateY(-2px);
+  background: #fff;
+  border-color: rgba(69, 111, 201, 0.34);
+}
+
+.tool svg {
+  width: 21px;
+  height: 21px;
+}
+
+.status {
+  min-width: 172px;
+  padding: 0 10px;
+}
+
+.status strong {
+  display: block;
+  font-size: 14px;
+}
+
+.status span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 2px;
+}
+
+.pet {
+  position: absolute;
+  left: min(58vw, 720px);
+  top: min(52vh, 420px);
+  width: clamp(150px, 21vw, 235px);
+  z-index: 10;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  transform-origin: 50% 78%;
+  filter: drop-shadow(0 18px 18px rgba(42, 30, 24, 0.26));
+}
+
+.pet.dragging {
+  cursor: grabbing;
+}
+
+.pet-body {
+  position: relative;
+  width: 100%;
+  transform-origin: 50% 78%;
+  animation: idle 2.8s ease-in-out infinite;
+}
+
+.pet-body img {
+  display: block;
+  width: 100%;
+  height: auto;
+  pointer-events: none;
+}
+
+.pet.walking .pet-body {
+  animation: walk 0.48s ease-in-out infinite;
+}
+
+.pet.shy .pet-body {
+  animation: shy 0.9s ease-in-out infinite;
+}
+
+.pet.sleeping .pet-body {
+  animation: sleep 3.6s ease-in-out infinite;
+  filter: saturate(0.88) brightness(0.96);
+}
+
+.pet.excited .pet-body {
+  animation: excited 0.42s ease-in-out 6;
+}
+
+.pet.poked .pet-body {
+  animation: poked 0.28s ease-in-out 2;
+}
+
+.bubble {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 12px);
+  min-width: 128px;
+  max-width: 230px;
+  transform: translateX(-50%) translateY(6px);
+  opacity: 0;
+  pointer-events: none;
+  padding: 10px 13px;
+  color: #26313c;
+  font-weight: 700;
+  line-height: 1.45;
+  text-align: center;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(255, 255, 255, 0.85);
+  box-shadow: 0 12px 32px rgba(36, 41, 46, 0.16);
+  backdrop-filter: blur(12px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.bubble.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  transform: translateX(-50%);
+  border: 8px solid transparent;
+  border-top-color: rgba(255, 255, 255, 0.86);
+}
+
+.effect-layer {
+  position: absolute;
+  inset: -34px;
+  pointer-events: none;
+}
+
+.heart,
+.snack,
+.zzz {
+  position: absolute;
+  opacity: 0;
+  animation-fill-mode: both;
+}
+
+.heart {
+  width: 20px;
+  height: 20px;
+  left: 72%;
+  top: 20%;
+  color: var(--pink);
+}
+
+.snack {
+  width: 26px;
+  height: 22px;
+  left: 8%;
+  top: 42%;
+  border-radius: 50% 50% 46% 46%;
+  background: linear-gradient(135deg, #f6d66e, #d78b42);
+  box-shadow: inset -4px -3px rgba(110, 63, 34, 0.16);
+}
+
+.snack::before,
+.snack::after {
+  content: "";
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(91, 56, 32, 0.5);
+}
+
+.snack::before {
+  left: 7px;
+  top: 7px;
+}
+
+.snack::after {
+  right: 7px;
+  top: 11px;
+}
+
+.zzz {
+  right: 2%;
+  top: 0;
+  color: var(--blue);
+  font-weight: 900;
+  font-size: 24px;
+}
+
+.pet.loved .heart {
+  animation: float-heart 1.2s ease-out both;
+}
+
+.pet.fed .snack {
+  animation: feed 1.25s ease-in-out both;
+}
+
+.pet.sleeping .zzz {
+  animation: zzz 2.6s ease-in-out infinite;
+}
+
+.floor-shadow {
+  position: absolute;
+  left: 17%;
+  right: 13%;
+  bottom: -5%;
+  height: 12%;
+  border-radius: 50%;
+  background: rgba(57, 37, 28, 0.18);
+  filter: blur(4px);
+  transform-origin: 50% 50%;
+  animation: shadow 2.8s ease-in-out infinite;
+}
+
+.pet.walking .floor-shadow {
+  animation: shadow-walk 0.48s ease-in-out infinite;
+}
+
+.window-card {
+  position: fixed;
+  left: 24px;
+  bottom: 24px;
+  z-index: 20;
+  width: min(360px, calc(100vw - 48px));
+  padding: 18px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(18px);
+}
+
+.window-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.window-head h1 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.lights {
+  display: flex;
+  gap: 7px;
+}
+
+.lights span {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--pink);
+}
+
+.lights span:nth-child(2) {
+  background: #f3c15c;
+}
+
+.lights span:nth-child(3) {
+  background: var(--green);
+}
+
+.meters {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.meter label {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  color: #323b45;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.track {
+  height: 9px;
+  margin-top: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(29, 34, 40, 0.1);
+}
+
+.fill {
+  width: 50%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--green), #f3c15c, var(--pink));
+}
+
+.hint {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.state-gallery {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 7px;
+  margin-top: 14px;
+  max-height: 156px;
+  overflow: auto;
+  padding-right: 3px;
+}
+
+.state-thumb {
+  height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 3px;
+}
+
+.state-thumb.active,
+.state-thumb:hover {
+  border-color: rgba(69, 111, 201, 0.48);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.state-thumb img {
+  max-width: 100%;
+  max-height: 100%;
+  display: block;
+}
+
+.toy {
+  position: absolute;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  z-index: 5;
+  left: 26%;
+  bottom: 18%;
+  background:
+    radial-gradient(circle at 32% 28%, #fff 0 13%, transparent 14%),
+    conic-gradient(from 0deg, #456fc9, #6cbf9d, #f3c15c, #dd7d91, #456fc9);
+  box-shadow: 0 10px 24px rgba(42, 50, 58, 0.17);
+  animation: toy 4.5s ease-in-out infinite;
+}
+
+.toy.hide {
+  display: none;
+}
+
+@keyframes idle {
+  0%, 100% { transform: translateY(0) rotate(-1deg) scale(1); }
+  45% { transform: translateY(-8px) rotate(1.5deg) scale(1.01); }
+  70% { transform: translateY(-2px) rotate(-0.5deg) scale(0.995); }
+}
+
+@keyframes walk {
+  0%, 100% { transform: translateY(0) rotate(-5deg) scaleX(1); }
+  50% { transform: translateY(-10px) rotate(5deg) scaleX(0.98); }
+}
+
+@keyframes shy {
+  0%, 100% { transform: rotate(-3deg) translateY(0) scale(1); }
+  50% { transform: rotate(3deg) translateY(-5px) scale(1.025); }
+}
+
+@keyframes sleep {
+  0%, 100% { transform: translateY(4px) rotate(-1deg) scale(0.98); }
+  50% { transform: translateY(0) rotate(1deg) scale(1); }
+}
+
+@keyframes excited {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  25% { transform: translateY(-16px) rotate(-8deg); }
+  50% { transform: translateY(0) rotate(7deg); }
+  75% { transform: translateY(-10px) rotate(-5deg); }
+}
+
+@keyframes poked {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  25% { transform: translateX(-10px) rotate(-5deg); }
+  50% { transform: translateX(9px) rotate(5deg); }
+  75% { transform: translateX(-5px) rotate(-2deg); }
+}
+
+@keyframes float-heart {
+  0% { opacity: 0; transform: translateY(12px) scale(0.6) rotate(-8deg); }
+  18% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-78px) scale(1.2) rotate(8deg); }
+}
+
+@keyframes feed {
+  0% { opacity: 0; transform: translate(-80px, 34px) scale(0.7) rotate(-20deg); }
+  20% { opacity: 1; }
+  70% { opacity: 1; transform: translate(78px, -22px) scale(0.92) rotate(12deg); }
+  100% { opacity: 0; transform: translate(104px, -34px) scale(0.4) rotate(32deg); }
+}
+
+@keyframes zzz {
+  0% { opacity: 0; transform: translate(0, 18px) scale(0.75); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: translate(18px, -72px) scale(1.22); }
+}
+
+@keyframes shadow {
+  0%, 100% { transform: scale(1); opacity: 0.18; }
+  45% { transform: scale(0.82); opacity: 0.12; }
+}
+
+@keyframes shadow-walk {
+  0%, 100% { transform: scaleX(1); opacity: 0.18; }
+  50% { transform: scaleX(0.78); opacity: 0.12; }
+}
+
+@keyframes toy {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  40% { transform: translate(16px, -8px) rotate(22deg); }
+  70% { transform: translate(-8px, 6px) rotate(-16deg); }
+}
+
+@media (max-width: 760px) {
+  .top-dock {
+    top: 10px;
+    width: calc(100vw - 20px);
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+
+  .status {
+    min-width: 100%;
+    text-align: center;
+  }
+
+  .pet {
+    width: clamp(138px, 44vw, 205px);
+  }
+
+  .window-card {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    width: auto;
+  }
+
+  .state-gallery {
+    grid-template-columns: repeat(6, 1fr);
+    max-height: 116px;
+  }
+}
+</style>
+</head>
+<body>
+<div id="desktop">
+  <nav class="top-dock" aria-label="宠物动作">
+    <div class="status">
+      <strong id="pet-name">幽灵猫</strong>
+      <span id="pet-status">有点害羞，正在观察你</span>
+    </div>
+    <button class="tool active" data-action="idle" type="button" title="待机">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3a7 7 0 0 0-7 7v3.5A3.5 3.5 0 0 0 8.5 17H9v3l3-3h3.5A3.5 3.5 0 0 0 19 13.5V10a7 7 0 0 0-7-7Zm-3 8a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm6 0a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z"/></svg>
+    </button>
+    <button class="tool" data-action="walk" type="button" title="散步">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M14.5 4.5a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM9 8h4.2l2.8 4.4 3.1 1-.7 2.1-4.3-1.4-1.6-2.4-1.4 3.1 3 2.7-1.5 1.7-4-3.6 1.4-3.1-1.9 1-2.8 4.2-1.9-1.2 3.1-4.8L9 8Z"/></svg>
+    </button>
+    <button class="tool" data-action="feed" type="button" title="喂食">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 3C7.6 3 4 6.2 4 10.2c0 2.7 1.7 5.1 4.1 6.3L7 21l4-2.1c.3 0 .7.1 1 .1 4.4 0 8-3.2 8-7.2S16.4 3 12 3Zm-3 8.2a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4Zm6 0a1.2 1.2 0 1 1 0-2.4 1.2 1.2 0 0 1 0 2.4Zm-3 4.1c-1.5 0-2.8-.8-3.5-2h7c-.7 1.2-2 2-3.5 2Z"/></svg>
+    </button>
+    <button class="tool" data-action="love" type="button" title="摸摸">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.5-9.2C1.1 8.5 3.4 5 6.8 5c2 0 3.3 1 4.2 2.1C11.9 6 13.2 5 15.2 5c3.4 0 5.7 3.5 4.3 6.8C17.5 16.4 12 21 12 21Z"/></svg>
+    </button>
+    <button class="tool" data-action="sleep" type="button" title="睡觉">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M16.5 4.4A8 8 0 1 0 20 15.2a7.2 7.2 0 0 1-8.4-8.4 8 8 0 0 0 4.9-2.4ZM13 8h6v1.6l-3.3 4.1H19V15h-6v-1.6l3.3-4.1H13V8Z"/></svg>
+    </button>
+  </nav>
+
+  <div class="toy" id="toy" aria-hidden="true"></div>
+
+  <section class="pet shy" id="pet" aria-label="幽灵猫桌面宠物">
+    <div class="bubble show" id="bubble">你好，我可以被拖来拖去。</div>
+    <div class="effect-layer">
+      <svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21s-7.5-4.6-9.5-9.2C1.1 8.5 3.4 5 6.8 5c2 0 3.3 1 4.2 2.1C11.9 6 13.2 5 15.2 5c3.4 0 5.7 3.5 4.3 6.8C17.5 16.4 12 21 12 21Z"/></svg>
+      <span class="snack"></span>
+      <span class="zzz">Zzz</span>
+    </div>
+    <div class="pet-body"><img id="pet-img" src="assets/pet-states/a01.png" alt="幽灵猫当前状态"></div>
+    <div class="floor-shadow"></div>
+  </section>
+
+  <aside class="window-card">
+    <div class="window-head">
+      <h1>桌面宠物控制台</h1>
+      <div class="lights" aria-hidden="true"><span></span><span></span><span></span></div>
+    </div>
+    <div class="meters">
+      <div class="meter">
+        <label><span>亲密度</span><span id="love-value">46</span></label>
+        <div class="track"><div class="fill" id="love-fill" style="width:46%"></div></div>
+      </div>
+      <div class="meter">
+        <label><span>精神</span><span id="energy-value">72</span></label>
+        <div class="track"><div class="fill" id="energy-fill" style="width:72%"></div></div>
+      </div>
+    </div>
+    <p class="hint">点击宠物会有反应，拖动它可以换位置。上方按钮可以切换动作，放着不管它也会自己发呆、散步和睡觉。</p>
+    <div class="state-gallery" id="state-gallery" aria-label="状态图鉴"></div>
+  </aside>
+</div>
+
+<script>
+const pet = document.getElementById("pet");
+const petImg = document.getElementById("pet-img");
+const bubble = document.getElementById("bubble");
+const statusText = document.getElementById("pet-status");
+const toolButtons = [...document.querySelectorAll(".tool")];
+const loveValue = document.getElementById("love-value");
+const loveFill = document.getElementById("love-fill");
+const energyValue = document.getElementById("energy-value");
+const energyFill = document.getElementById("energy-fill");
+const toy = document.getElementById("toy");
+const stateGallery = document.getElementById("state-gallery");
+
+let dragging = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+let roamTimer = null;
+let bubbleTimer = null;
+let love = 46;
+let energy = 72;
+let currentAction = "shy";
+
+const states = [
+  { id: "a01", label: "刷手机", group: "idle", file: "a01.png", width: "clamp(150px, 20vw, 230px)" },
+  { id: "a02", label: "点外卖", group: "feed", file: "a02.png", width: "clamp(190px, 25vw, 285px)" },
+  { id: "a03", label: "吃泡面", group: "feed", file: "a03.png", width: "clamp(210px, 26vw, 300px)" },
+  { id: "a04", label: "加油敲键盘", group: "work", file: "a04.png", width: "clamp(210px, 26vw, 305px)" },
+  { id: "a05", label: "被工作击中", group: "tired", file: "a05.png", width: "clamp(185px, 23vw, 275px)" },
+  { id: "a06", label: "电脑办公", group: "work", file: "a06.png", width: "clamp(180px, 22vw, 265px)" },
+  { id: "a07", label: "摸鱼座椅", group: "idle", file: "a07.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "a08", label: "紧张回消息", group: "shy", file: "a08.png", width: "clamp(150px, 18vw, 215px)" },
+  { id: "a09", label: "委屈加班", group: "tired", file: "a09.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "a10", label: "坐地摸鱼", group: "idle", file: "a10.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "a11", label: "找表情", group: "love", file: "a11.png", width: "clamp(160px, 20vw, 240px)" },
+  { id: "a12", label: "猛喝水", group: "feed", file: "a12.png", width: "clamp(160px, 20vw, 235px)" },
+  { id: "a13", label: "冰淇淋摸鱼", group: "feed", file: "a13.png", width: "clamp(165px, 21vw, 245px)" },
+  { id: "a14", label: "截图", group: "work", file: "a14.png", width: "clamp(150px, 19vw, 230px)" },
+  { id: "a15", label: "大哭", group: "tired", file: "a15.png", width: "clamp(145px, 18vw, 210px)" },
+  { id: "a16", label: "飞走", group: "walk", file: "a16.png", width: "clamp(170px, 22vw, 260px)" },
+  { id: "a17", label: "惊喜", group: "love", file: "a17.png", width: "clamp(150px, 19vw, 220px)" },
+  { id: "a18", label: "被窝睡觉", group: "sleep", file: "a18.png", width: "clamp(155px, 19vw, 225px)" },
+  { id: "a19", label: "同伴陪伴", group: "love", file: "a19.png", width: "clamp(160px, 20vw, 230px)" },
+  { id: "a20", label: "转身离开", group: "walk", file: "a20.png", width: "clamp(150px, 19vw, 225px)" },
+  { id: "a21", label: "打电话", group: "idle", file: "a21.png", width: "clamp(160px, 20vw, 235px)" },
+  { id: "a22", label: "躺平", group: "sleep", file: "a22.png", width: "clamp(175px, 22vw, 260px)" },
+  { id: "a23", label: "夜班耳机", group: "work", file: "a23.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "a24", label: "新表情", group: "idle", file: "a24.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "b01", label: "举灯", group: "walk", file: "b01.png", width: "clamp(120px, 15vw, 170px)" },
+  { id: "b02", label: "趴着睡", group: "sleep", file: "b02.png", width: "clamp(170px, 22vw, 260px)" },
+  { id: "b03", label: "棉花糖", group: "idle", file: "b03.png", width: "clamp(150px, 19vw, 225px)" },
+  { id: "b04", label: "浮云", group: "sleep", file: "b04.png", width: "clamp(170px, 22vw, 255px)" },
+  { id: "b05", label: "瘫倒", group: "tired", file: "b05.png", width: "clamp(165px, 21vw, 245px)" },
+  { id: "b06", label: "小伙伴", group: "idle", file: "b06.png", width: "clamp(190px, 25vw, 285px)" },
+  { id: "b07", label: "背手", group: "shy", file: "b07.png", width: "clamp(150px, 19vw, 220px)" },
+  { id: "b08", label: "竖牌", group: "love", file: "b08.png", width: "clamp(145px, 18vw, 215px)" },
+  { id: "b09", label: "闪亮登场", group: "love", file: "b09.png", width: "clamp(160px, 20vw, 235px)" },
+  { id: "b10", label: "桌下偷懒", group: "sleep", file: "b10.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "b11", label: "崩溃办公", group: "tired", file: "b11.png", width: "clamp(200px, 26vw, 300px)" },
+  { id: "b12", label: "被埋工作", group: "tired", file: "b12.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "b13", label: "夜班冠军", group: "work", file: "b13.png", width: "clamp(195px, 25vw, 290px)" },
+  { id: "b14", label: "趴键盘", group: "work", file: "b14.png", width: "clamp(195px, 25vw, 290px)" },
+  { id: "b15", label: "滑走", group: "walk", file: "b15.png", width: "clamp(170px, 22vw, 260px)" },
+  { id: "b16", label: "飞天", group: "walk", file: "b16.png", width: "clamp(150px, 19vw, 225px)" },
+  { id: "b17", label: "打扫", group: "work", file: "b17.png", width: "clamp(190px, 25vw, 285px)" },
+  { id: "b18", label: "会议发呆", group: "work", file: "b18.png", width: "clamp(195px, 25vw, 290px)" },
+  { id: "b19", label: "熬夜冠军", group: "work", file: "b19.png", width: "clamp(190px, 24vw, 285px)" },
+  { id: "b20", label: "奶瓶惊吓", group: "love", file: "b20.png", width: "clamp(155px, 20vw, 235px)" },
+  { id: "b21", label: "贴贴同伴", group: "love", file: "b21.png", width: "clamp(170px, 22vw, 255px)" },
+  { id: "b22", label: "打牌", group: "idle", file: "b22.png", width: "clamp(195px, 25vw, 290px)" },
+  { id: "b23", label: "害羞捂脸", group: "shy", file: "b23.png", width: "clamp(145px, 18vw, 215px)" },
+  { id: "b24", label: "被窝惊喜", group: "sleep", file: "b24.png", width: "clamp(190px, 24vw, 285px)" }
+];
+
+const stateMap = Object.fromEntries(states.map(state => [state.id, state]));
+
+const lines = {
+  idle: ["我在这里。", "今天也要轻轻地过。", "盯..."],
+  work: ["开始认真营业。", "键盘好烫。", "我正在替你加班。"],
+  walk: ["我去巡逻一下。", "这块桌面归我管了。", "小步快跑。"],
+  feed: ["啊呜。", "这个味道不错。", "再来一口也不是不行。"],
+  love: ["不要突然这么温柔。", "咕噜。", "好吧，可以再摸一下。"],
+  sleep: ["我先充会儿电。", "梦里也要巡逻。", "晚安五分钟。"],
+  tired: ["电量低了。", "工作把我拍扁了。", "需要一点点安慰。"],
+  poke: ["呀。", "你戳到我了。", "我假装没被吓到。"],
+  shy: ["我有点害羞。", "先让我观察一下。", "你看不见我。"]
+};
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function updateMeters() {
+  love = clamp(love, 0, 100);
+  energy = clamp(energy, 0, 100);
+  loveValue.textContent = Math.round(love);
+  energyValue.textContent = Math.round(energy);
+  loveFill.style.width = `${love}%`;
+  energyFill.style.width = `${energy}%`;
+}
+
+function say(kind, customLine) {
+  const pool = lines[kind] || lines.idle;
+  bubble.textContent = customLine || pool[Math.floor(Math.random() * pool.length)];
+  bubble.classList.add("show");
+  window.clearTimeout(bubbleTimer);
+  bubbleTimer = window.setTimeout(() => bubble.classList.remove("show"), 2600);
+}
+
+function setActiveTool(action) {
+  toolButtons.forEach(button => {
+    button.classList.toggle("active", button.dataset.action === action || (action === "shy" && button.dataset.action === "idle"));
+  });
+}
+
+function clearMomentClasses() {
+  pet.classList.remove("fed", "loved", "poked", "excited");
+}
+
+function pickState(group) {
+  const pool = states.filter(state => state.group === group);
+  return pool[Math.floor(Math.random() * pool.length)] || stateMap.b23;
+}
+
+function applyState(stateOrId) {
+  const state = typeof stateOrId === "string" ? stateMap[stateOrId] : stateOrId;
+  if (!state) return;
+  petImg.src = `assets/pet-states/${state.file}`;
+  petImg.alt = `幽灵猫：${state.label}`;
+  pet.style.width = state.width;
+  pet.dataset.currentState = state.id;
+  document.querySelectorAll(".state-thumb").forEach(button => {
+    button.classList.toggle("active", button.dataset.state === state.id);
+  });
+}
+
+function setAction(action, options = {}) {
+  currentAction = action;
+  pet.classList.remove("idle", "walking", "shy", "sleeping");
+  clearMomentClasses();
+  toy.classList.toggle("hide", action === "sleep");
+  const visualGroup = action === "walk" ? "walk" : action;
+  if (!options.keepState) applyState(pickState(visualGroup));
+
+  if (action === "walk") {
+    pet.classList.add("walking");
+    statusText.textContent = "正在桌面上巡逻";
+  } else if (action === "work") {
+    pet.classList.add("idle");
+    statusText.textContent = "正在努力营业";
+  } else if (action === "tired") {
+    pet.classList.add("shy");
+    statusText.textContent = "有点累，需要安慰";
+  } else if (action === "sleep") {
+    pet.classList.add("sleeping");
+    statusText.textContent = "睡着了，精神恢复中";
+  } else if (action === "shy") {
+    pet.classList.add("shy");
+    statusText.textContent = "有点害羞，正在观察你";
+  } else {
+    pet.classList.add("idle");
+    statusText.textContent = "待机中，偶尔会发呆";
+  }
+
+  setActiveTool(action);
+  if (!options.quiet) say(action);
+}
+
+function movePetTo(x, y, animated = true) {
+  const rect = pet.getBoundingClientRect();
+  const maxX = window.innerWidth - rect.width - 8;
+  const bottomReserve = window.innerWidth > 760 ? 190 : 220;
+  const maxY = Math.max(88, window.innerHeight - rect.height - bottomReserve);
+  pet.style.transition = animated ? "left 1.3s cubic-bezier(.22,.8,.2,1), top 1.3s cubic-bezier(.22,.8,.2,1), transform .2s ease" : "none";
+  pet.style.left = `${clamp(x, 8, maxX)}px`;
+  pet.style.top = `${clamp(y, 86, maxY)}px`;
+}
+
+function roam() {
+  if (dragging) return;
+  const action = Math.random() > 0.56 ? "walk" : (Math.random() > 0.75 ? "sleep" : "idle");
+  setAction(action, { quiet: true });
+  if (action === "walk") {
+    const rect = pet.getBoundingClientRect();
+    const nextX = Math.random() * (window.innerWidth - rect.width - 16) + 8;
+    const bottomReserve = window.innerWidth > 760 ? 210 : 230;
+    const travelHeight = Math.max(120, window.innerHeight - rect.height - bottomReserve);
+    const nextY = Math.random() * (travelHeight - 88) + 88;
+    pet.style.transform = nextX < rect.left ? "scaleX(-1)" : "scaleX(1)";
+    movePetTo(nextX, nextY);
+    say("walk");
+    energy -= 2;
+  } else if (action === "sleep") {
+    say("sleep");
+    energy += 4;
+  } else if (Math.random() > 0.68) {
+    setAction("work", { quiet: true });
+    say("work");
+    energy -= 2;
+  } else {
+    say("idle");
+    energy -= 0.5;
+  }
+  updateMeters();
+}
+
+function resetRoam() {
+  window.clearInterval(roamTimer);
+  roamTimer = window.setInterval(roam, 6800);
+}
+
+pet.addEventListener("pointerdown", event => {
+  dragging = true;
+  pet.classList.add("dragging");
+  const rect = pet.getBoundingClientRect();
+  dragOffsetX = event.clientX - rect.left;
+  dragOffsetY = event.clientY - rect.top;
+  pet.setPointerCapture(event.pointerId);
+  setAction("shy", { quiet: true });
+  say("poke");
+});
+
+pet.addEventListener("pointermove", event => {
+  if (!dragging) return;
+  movePetTo(event.clientX - dragOffsetX, event.clientY - dragOffsetY, false);
+});
+
+pet.addEventListener("pointerup", event => {
+  dragging = false;
+  pet.classList.remove("dragging");
+  pet.releasePointerCapture(event.pointerId);
+  setAction("idle");
+  resetRoam();
+});
+
+pet.addEventListener("click", () => {
+  if (dragging) return;
+  clearMomentClasses();
+  pet.classList.add("poked");
+  love += 1;
+  energy -= 1;
+  updateMeters();
+  say("poke");
+  window.setTimeout(() => pet.classList.remove("poked"), 700);
+});
+
+toolButtons.forEach(button => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.action;
+    resetRoam();
+
+  if (action === "feed") {
+      applyState(pickState("feed"));
+      setAction("idle", { quiet: true, keepState: true });
+      pet.classList.add("fed", "excited");
+      love += 4;
+      energy += 3;
+      updateMeters();
+      say("feed");
+      window.setTimeout(clearMomentClasses, 1300);
+      return;
+    }
+
+    if (action === "love") {
+      applyState(pickState("love"));
+      setAction("shy", { quiet: true, keepState: true });
+      pet.classList.add("loved", "excited");
+      love += 6;
+      energy -= 1;
+      updateMeters();
+      say("love");
+      window.setTimeout(clearMomentClasses, 1300);
+      return;
+    }
+
+    setAction(action);
+  });
+});
+
+function buildGallery() {
+  stateGallery.innerHTML = "";
+  states.forEach(state => {
+    const button = document.createElement("button");
+    button.className = "state-thumb";
+    button.type = "button";
+    button.title = state.label;
+    button.dataset.state = state.id;
+    button.innerHTML = `<img src="assets/pet-states/${state.file}" alt="${state.label}">`;
+    button.addEventListener("click", () => {
+      applyState(state);
+      setAction(state.group === "work" || state.group === "tired" ? state.group : state.group, { quiet: true, keepState: true });
+      say(state.group, state.label);
+      resetRoam();
+    });
+    stateGallery.appendChild(button);
+  });
+}
+
+window.addEventListener("resize", () => {
+  const rect = pet.getBoundingClientRect();
+  movePetTo(rect.left, rect.top, false);
+});
+
+buildGallery();
+applyState("a01");
+movePetTo(Math.min(window.innerWidth * 0.58, 720), Math.min(window.innerHeight * 0.28, 245), false);
+setAction("idle", { quiet: true, keepState: true });
+say("idle", "我先坐一会儿，等你叫我。");
+updateMeters();
+resetRoam();
+</script>
+</body>
+</html>

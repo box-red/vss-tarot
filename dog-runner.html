@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🐕 小狗跑酷</title>
+<style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background: #1a1a2e;
+        font-family: 'Arial', sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+    }
+    #game-container {
+        position: relative;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    canvas {
+        display: block;
+    }
+</style>
+</head>
+<body>
+<div id="game-container">
+    <canvas id="game"></canvas>
+</div>
+<script>
+// ============================================================
+//  小狗跑酷 — 一个像 Chrome 断网恐龙那样的 2D 跑酷游戏
+//  把恐龙换成了金色卡通小狗，在草地上躲避猫、邮递员、消防栓和飞鸟
+// ============================================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+canvas.width = 800;
+canvas.height = 350;
+
+// ======================== 游戏常量 ========================
+const GROUND_Y = 280;
+const DOG_X = 100;
+const FIXED_DT = 1 / 60;
+const INITIAL_SPEED = 300;
+const MAX_SPEED = 750;
+const SPEED_INCREASE = 5;
+const JUMP_VELOCITY = -430;
+const GRAVITY = 1500;
+const MIN_SPAWN_GAP = 1.2;
+const MAX_SPAWN_GAP = 2.5;
+
+// ======================== 游戏状态 ========================
+let state = 'start';
+let score = 0;
+let distanceTraveled = 0;
+let speed = INITIAL_SPEED;
+let dogY = GROUND_Y;
+let dogVy = 0;
+let isJumping = false;
+let isDucking = false;
+let obstacles = [];
+let spawnTimer = 0;
+let frameCount = 0;
+let elapsedTime = 0;
+let highScore = 0;
+
+// ==================== 装饰元素（视差）====================
+let clouds = [];
+let hills = [];
+let bushes = [];
+let grassTufts = [];
+
+function generateDecorations() {
+    clouds = [];
+    for (let i = 0; i < 6; i++) {
+        clouds.push({
+            x: Math.random() * 800,
+            y: 20 + Math.random() * 80,
+            w: 40 + Math.random() * 60,
+            h: 15 + Math.random() * 20
+        });
+    }
+    hills = [];
+    for (let i = 0; i < 4; i++) {
+        hills.push({
+            x: i * 250 + Math.random() * 50,
+            w: 150 + Math.random() * 150,
+            h: 40 + Math.random() * 60
+        });
+    }
+    bushes = [];
+    for (let i = 0; i < 8; i++) {
+        bushes.push({
+            x: i * 120 + Math.random() * 60,
+            w: 20 + Math.random() * 35,
+            h: 15 + Math.random() * 25
+        });
+    }
+    grassTufts = [];
+    for (let i = 0; i < 30; i++) {
+        grassTufts.push({
+            x: i * 30 + Math.random() * 20,
+            h: 6 + Math.random() * 14
+        });
+    }
+}
+generateDecorations();
+
+// ==================== 绘图辅助 ====================
+const π = Math.PI;
+
+function circ(x, y, r) {
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, π * 2);
+    ctx.fill();
+}
+
+function ellip(x, y, rx, ry) {
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, 0, 0, π * 2);
+    ctx.fill();
+}
+
+function rrect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fill();
+}
+
+// ==================== 背景绘制 ====================
+function drawBackground() {
+    // 天空渐变
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    skyGrad.addColorStop(0, '#7EB8E0');
+    skyGrad.addColorStop(0.5, '#B8D8F0');
+    skyGrad.addColorStop(1, '#D8ECD8');
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, canvas.width, GROUND_Y);
+
+    // 太阳
+    ctx.fillStyle = 'rgba(255,244,200,0.6)';
+    circ(680, 55, 35);
+    ctx.fillStyle = 'rgba(255,250,230,0.4)';
+    circ(680, 55, 45);
+
+    // 云朵
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    for (const c of clouds) {
+        circ(c.x, c.y, c.h * 0.5);
+        circ(c.x + c.w * 0.25, c.y - c.h * 0.15, c.h * 0.55);
+        circ(c.x + c.w * 0.5, c.y, c.h * 0.5);
+        circ(c.x + c.w * 0.3, c.y + c.h * 0.1, c.h * 0.4);
+    }
+
+    // 远山 (0.15x 视差)
+    for (const h of hills) {
+        ctx.fillStyle = '#8CCB6E';
+        ctx.beginPath();
+        ctx.moveTo(h.x, GROUND_Y);
+        ctx.quadraticCurveTo(h.x + h.w / 2, GROUND_Y - h.h, h.x + h.w, GROUND_Y);
+        ctx.fill();
+        // 山脊线
+        ctx.fillStyle = '#7BB85D';
+        ctx.beginPath();
+        ctx.moveTo(h.x, GROUND_Y);
+        ctx.quadraticCurveTo(h.x + h.w / 2, GROUND_Y - h.h, h.x + h.w * 0.5, GROUND_Y);
+        ctx.fill();
+    }
+
+    // 灌木丛 (0.4x 视差)
+    for (const b of bushes) {
+        ctx.fillStyle = '#6DA838';
+        circ(b.x, GROUND_Y - b.h * 0.4, b.h * 0.5);
+        circ(b.x + b.w * 0.3, GROUND_Y - b.h * 0.7, b.h * 0.45);
+        circ(b.x + b.w * 0.6, GROUND_Y - b.h * 0.35, b.h * 0.4);
+        circ(b.x + b.w * 0.45, GROUND_Y - b.h * 0.5, b.h * 0.48);
+    }
+
+    // 地面主体
+    const gndGrad = ctx.createLinearGradient(0, GROUND_Y, 0, canvas.height);
+    gndGrad.addColorStop(0, '#5DA838');
+    gndGrad.addColorStop(0.04, '#4A9628');
+    gndGrad.addColorStop(0.5, '#6DB83A');
+    gndGrad.addColorStop(1, '#3D7F20');
+    ctx.fillStyle = gndGrad;
+    ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+    // 地面线
+    ctx.strokeStyle = '#4A9628';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(0, GROUND_Y);
+    ctx.lineTo(canvas.width, GROUND_Y);
+    ctx.stroke();
+
+    // 草丛
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    for (const t of grassTufts) {
+        const baseY = GROUND_Y + 2;
+        // 左边一撮
+        ctx.strokeStyle = '#4A9628';
+        ctx.beginPath();
+        ctx.moveTo(t.x, baseY);
+        ctx.quadraticCurveTo(t.x - 3, baseY - t.h, t.x - 2, baseY - t.h);
+        ctx.stroke();
+        // 右边一撮
+        ctx.beginPath();
+        ctx.moveTo(t.x + 3, baseY);
+        ctx.quadraticCurveTo(t.x + 5, baseY - t.h * 0.8, t.x + 4, baseY - t.h * 0.85);
+        ctx.stroke();
+        // 中间一撮
+        ctx.strokeStyle = '#5CB838';
+        ctx.beginPath();
+        ctx.moveTo(t.x + 1, baseY);
+        ctx.quadraticCurveTo(t.x + 1, baseY - t.h * 1.05, t.x, baseY - t.h * 1.05);
+        ctx.stroke();
+    }
+
+    // 地面小花点缀
+    for (let i = 0; i < grassTufts.length; i += 7) {
+        const t = grassTufts[i];
+        const fx = t.x + 2, fy = GROUND_Y + 3;
+        ctx.fillStyle = '#FFE87C';
+        circ(fx, fy, 1.8);
+        circ(fx - 1.8, fy - 1, 1.5);
+        circ(fx + 1.8, fy - 1, 1.5);
+        circ(fx, fy - 2.2, 1.5);
+        circ(fx, fy, 1);
+        ctx.fillStyle = '#FFCC44';
+        circ(fx, fy, 1);
+    }
+}
+
+// ==================== 小狗绘制 ====================
+function drawDog(x, y, frame, ducking) {
+    // 用于非游戏状态的动画（尾巴摆动）
+    const tailTime = state === 'playing' ? frameCount : Math.floor(Date.now() / 50);
+    const tailWag = Math.sin(tailTime * 0.3) * 6;
+
+    ctx.save();
+
+    if (ducking) {
+        // ───── 蹲下的小狗 ─────
+        const by = y - 8;
+
+        // 尾巴（低垂，小幅摆动）
+        ctx.strokeStyle = '#D4943A';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x - 24, by - 8);
+        ctx.quadraticCurveTo(x - 30, by - 12 + tailWag * 0.4, x - 26, by - 18);
+        ctx.stroke();
+        ctx.fillStyle = '#F0C878';
+        circ(x - 26, by - 18, 2.5);
+
+        // 后腿（弯曲）
+        ctx.fillStyle = '#C4882A';
+        rrect(x - 14, by - 16, 7, 14, 3);
+        rrect(x - 2, by - 16, 7, 14, 3);
+
+        // 前腿（弯曲）
+        rrect(x + 7, by - 16, 7, 14, 3);
+        rrect(x + 18, by - 14, 7, 12, 3);
+
+        // 爪子
+        ctx.fillStyle = '#E0A040';
+        rrect(x - 15, by - 3, 9, 4, 2);
+        rrect(x - 3, by - 3, 9, 4, 2);
+        rrect(x + 6, by - 3, 9, 4, 2);
+        rrect(x + 17, by - 3, 9, 4, 2);
+
+        // 身体（更扁更宽）
+        ctx.fillStyle = '#D4943A';
+        ellip(x + 3, by - 20, 30, 9);
+
+        // 肚皮
+        ctx.fillStyle = '#F0C878';
+        ellip(x, by - 16, 20, 5);
+
+        // 头部（降低）
+        ctx.fillStyle = '#E0A040';
+        circ(x + 26, by - 26, 9);
+
+        // 口鼻部
+        ctx.fillStyle = '#E8B860';
+        ellip(x + 33, by - 25, 6, 4);
+
+        // 鼻头
+        ctx.fillStyle = '#3A2518';
+        circ(x + 37, by - 26, 2);
+
+        // 眯眼
+        ctx.strokeStyle = '#1A1A1A';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.arc(x + 27, by - 29, 2.5, 0.2, π - 0.2);
+        ctx.stroke();
+
+        // 耳朵（贴伏）
+        ctx.fillStyle = '#B8702A';
+        ctx.beginPath();
+        ctx.moveTo(x + 20, by - 33);
+        ctx.quadraticCurveTo(x + 13, by - 26, x + 17, by - 20);
+        ctx.quadraticCurveTo(x + 22, by - 23, x + 22, by - 29);
+        ctx.fill();
+
+    } else {
+        // ───── 站立/奔跑的小狗 ─────
+
+        // 尾巴（蓬松，快速摆动）
+        ctx.strokeStyle = '#D4943A';
+        ctx.lineWidth = 3.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x - 22, y - 34);
+        ctx.quadraticCurveTo(
+            x - 32 + tailWag,
+            y - 44,
+            x - 22 + tailWag * 1.4,
+            y - 52 + Math.abs(tailWag) * 0.6
+        );
+        ctx.stroke();
+        // 尾巴蓬松尖端
+        ctx.fillStyle = '#F0C878';
+        circ(x - 22 + tailWag * 1.4, y - 52 + Math.abs(tailWag) * 0.6, 3);
+
+        // 后腿
+        ctx.fillStyle = '#C4882A';
+        if (frame === 0) {
+            rrect(x - 20, y - 22, 7, 22, 3);
+            rrect(x - 5, y - 20, 7, 20, 3);
+        } else {
+            rrect(x - 14, y - 20, 7, 20, 3);
+            rrect(x - 3, y - 22, 7, 22, 3);
+        }
+
+        // 前腿
+        if (frame === 0) {
+            rrect(x + 5, y - 20, 7, 20, 3);
+            rrect(x + 18, y - 22, 7, 22, 3);
+        } else {
+            rrect(x + 10, y - 22, 7, 22, 3);
+            rrect(x + 20, y - 20, 7, 20, 3);
+        }
+
+        // 爪子
+        ctx.fillStyle = '#E0A040';
+        if (frame === 0) {
+            rrect(x - 21, y - 2, 9, 4, 2); rrect(x - 6, y - 2, 9, 4, 2);
+            rrect(x + 4, y - 2, 9, 4, 2); rrect(x + 17, y - 2, 9, 4, 2);
+        } else {
+            rrect(x - 15, y - 2, 9, 4, 2); rrect(x - 4, y - 2, 9, 4, 2);
+            rrect(x + 9, y - 2, 9, 4, 2); rrect(x + 19, y - 2, 9, 4, 2);
+        }
+
+        // 身体
+        ctx.fillStyle = '#D4943A';
+        ellip(x + 2, y - 34, 25, 14);
+
+        // 肚皮（浅金色）
+        ctx.fillStyle = '#F0C878';
+        ellip(x, y - 28, 17, 8);
+
+        // 头部
+        ctx.fillStyle = '#E0A040';
+        circ(x + 28, y - 48, 11);
+
+        // 口鼻部
+        ctx.fillStyle = '#E8B860';
+        ellip(x + 36, y - 44, 7, 5.5);
+
+        // 鼻头
+        ctx.fillStyle = '#3A2518';
+        circ(x + 40, y - 45, 2.5);
+        ctx.fillStyle = 'rgba(255,255,255,0.25)';
+        circ(x + 39.5, y - 46, 0.9);
+
+        // 眼睛
+        ctx.fillStyle = '#1A1A1A';
+        circ(x + 29, y - 51, 2.2);
+        ctx.fillStyle = '#FFF';
+        circ(x + 29.5, y - 51.6, 0.8);
+
+        // 微笑
+        ctx.strokeStyle = '#8B5A2B';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x + 37, y - 43, 3, 0.1, π - 0.1);
+        ctx.stroke();
+
+        // 小舌头（偶尔伸出）
+        if (tailTime % 20 < 8) {
+            ctx.fillStyle = '#E87080';
+            ctx.beginPath();
+            ctx.ellipse(x + 40, y - 40, 2.8, 4, 0.15, 0, π * 2);
+            ctx.fill();
+        }
+
+        // 耳朵（floppy，微弹）
+        const earBob = Math.sin(tailTime * 0.3) * 1.5;
+        ctx.fillStyle = '#B8702A';
+        ctx.beginPath();
+        ctx.moveTo(x + 22, y - 56);
+        ctx.quadraticCurveTo(x + 15, y - 46 + earBob, x + 19, y - 38);
+        ctx.quadraticCurveTo(x + 24, y - 41, x + 24, y - 50);
+        ctx.fill();
+        // 耳朵内侧
+        ctx.fillStyle = '#D4943A';
+        ctx.beginPath();
+        ctx.moveTo(x + 21, y - 54);
+        ctx.quadraticCurveTo(x + 17, y - 46 + earBob, x + 20, y - 40);
+        ctx.quadraticCurveTo(x + 23, y - 43, x + 23, y - 49);
+        ctx.fill();
+    }
+
+    ctx.restore();
+}
+
+// ==================== 障碍物绘制 ====================
+function drawCat(x, baseY) {
+    ctx.fillStyle = '#5A5A5A';
+    ellip(x, baseY - 14, 13, 12);
+    ctx.fillStyle = '#4A4A4A';
+    circ(x, baseY - 26, 9);
+    // 猫耳朵
+    ctx.fillStyle = '#4A4A4A';
+    ctx.beginPath(); ctx.moveTo(x - 7, baseY - 30); ctx.lineTo(x - 3, baseY - 39); ctx.lineTo(x + 1, baseY - 29); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 1, baseY - 30); ctx.lineTo(x + 5, baseY - 39); ctx.lineTo(x + 7, baseY - 29); ctx.fill();
+    ctx.fillStyle = '#E8A0A0';
+    ctx.beginPath(); ctx.moveTo(x - 5, baseY - 31); ctx.lineTo(x - 3, baseY - 36); ctx.lineTo(x - 1, baseY - 30); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(x + 2, baseY - 31); ctx.lineTo(x + 4, baseY - 36); ctx.lineTo(x + 6, baseY - 30); ctx.fill();
+    // 猫眼
+    ctx.fillStyle = '#CCFF44'; circ(x - 3, baseY - 27, 2); circ(x + 3, baseY - 27, 2);
+    ctx.fillStyle = '#1A1A1A'; ellip(x - 3, baseY - 27, 1, 2); ellip(x + 3, baseY - 27, 1, 2);
+    // 胡须
+    ctx.strokeStyle = '#888'; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(x - 3, baseY - 25); ctx.lineTo(x - 12, baseY - 27); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 3, baseY - 24); ctx.lineTo(x - 12, baseY - 24); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 3, baseY - 25); ctx.lineTo(x + 12, baseY - 27); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + 3, baseY - 24); ctx.lineTo(x + 12, baseY - 24); ctx.stroke();
+    // 尾巴
+    ctx.strokeStyle = '#5A5A5A'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - 10, baseY - 8); ctx.quadraticCurveTo(x - 16, baseY - 14, x - 12, baseY - 22); ctx.stroke();
+    // 腿
+    ctx.fillStyle = '#4A4A4A'; rrect(x - 5, baseY - 6, 5, 8, 2); rrect(x + 1, baseY - 6, 5, 8, 2);
+    // 铃铛项圈
+    ctx.fillStyle = '#CC3333'; ctx.fillRect(x - 7, baseY - 33, 14, 3);
+    ctx.fillStyle = '#FFD700'; circ(x, baseY - 35, 2.5);
+}
+
+function drawPostman(x, baseY) {
+    // 腿
+    ctx.fillStyle = '#3A3A50'; rrect(x - 5, baseY - 16, 5, 16, 2); rrect(x + 2, baseY - 16, 5, 16, 2);
+    // 鞋
+    ctx.fillStyle = '#2A2A2A'; rrect(x - 7, baseY - 3, 8, 4, 1.5); rrect(x + 1, baseY - 3, 8, 4, 1.5);
+    // 身体
+    ctx.fillStyle = '#3366AA'; rrect(x - 8, baseY - 36, 18, 22, 3);
+    // 腰带
+    ctx.fillStyle = '#5A3A1A'; ctx.fillRect(x - 8, baseY - 22, 18, 3);
+    ctx.fillStyle = '#FFD700'; rrect(x - 2, baseY - 23, 6, 5, 1.5);
+    // 手臂
+    ctx.fillStyle = '#3366AA'; rrect(x + 9, baseY - 34, 5, 12, 2);
+    ctx.fillStyle = '#CCAA77'; circ(x + 11, baseY - 24, 3);
+    // 邮包
+    ctx.fillStyle = '#8B5A2B'; rrect(x - 14, baseY - 28, 9, 12, 2);
+    ctx.fillStyle = '#A07040'; rrect(x - 13, baseY - 30, 7, 2, 1);
+    ctx.fillStyle = '#FFF'; ctx.fillRect(x - 11, baseY - 26, 3, 4);
+    // ✉ 标志
+    ctx.fillStyle = '#FFD700'; ctx.font = '6px Arial'; ctx.fillText('✉', x - 12, baseY - 25);
+    // 头
+    ctx.fillStyle = '#CCAA77'; circ(x + 1, baseY - 42, 8);
+    // 帽子
+    ctx.fillStyle = '#3A3A50'; ctx.fillRect(x - 6, baseY - 48, 14, 4); ctx.fillRect(x - 4, baseY - 52, 10, 6);
+    ctx.fillStyle = '#4466AA'; ctx.fillRect(x - 5, baseY - 47, 12, 2);
+    // 眼睛
+    ctx.fillStyle = '#1A1A1A'; circ(x - 1, baseY - 43, 1.2); circ(x + 4, baseY - 43, 1.2);
+}
+
+function drawHydrant(x, baseY) {
+    // 底座
+    ctx.fillStyle = '#AA2222'; rrect(x - 10, baseY - 6, 20, 6, 2);
+    // 主体
+    const hGrad = ctx.createLinearGradient(x, 0, x + 14, 0);
+    hGrad.addColorStop(0, '#CC3333'); hGrad.addColorStop(0.5, '#EE4444'); hGrad.addColorStop(1, '#BB2222');
+    ctx.fillStyle = hGrad;
+    rrect(x - 7, baseY - 24, 14, 20, 3);
+    // 两侧喷嘴
+    ctx.fillStyle = '#AA2222'; rrect(x + 6, baseY - 16, 7, 5, 1.5); rrect(x - 13, baseY - 16, 7, 5, 1.5);
+    ctx.fillStyle = '#881111'; rrect(x + 6, baseY - 15, 7, 3, 1.5); rrect(x - 13, baseY - 15, 7, 3, 1.5);
+    // 顶部圆盖
+    ctx.fillStyle = '#DD4444'; ellip(x, baseY - 24, 8, 4);
+    ctx.fillStyle = '#CC3333'; ctx.fillRect(x - 8, baseY - 26, 16, 3);
+    // 高光
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(x - 3, baseY - 21, 3, 12);
+}
+
+function drawBird(x, baseY) {
+    const flap = Math.sin((state === 'playing' ? frameCount : Date.now() / 50) * 0.4) * 5;
+    // 下方翅膀
+    ctx.fillStyle = '#666';
+    ctx.beginPath();
+    ctx.moveTo(x + 2, baseY + 1);
+    ctx.quadraticCurveTo(x + 10, baseY + 12 - flap, x + 15, baseY + 8 - flap);
+    ctx.quadraticCurveTo(x + 6, baseY + 3, x, baseY);
+    ctx.fill();
+    // 上方翅膀
+    ctx.beginPath();
+    ctx.moveTo(x - 2, baseY - 2);
+    ctx.quadraticCurveTo(x - 10, baseY - 14 + flap, x - 15, baseY - 10 + flap);
+    ctx.quadraticCurveTo(x - 6, baseY - 4, x, baseY - 1);
+    ctx.fill();
+    // 身体
+    ctx.fillStyle = '#555'; ellip(x, baseY, 8, 5);
+    // 头
+    ctx.fillStyle = '#444'; circ(x + 7, baseY - 2, 3.5);
+    // 喙
+    ctx.fillStyle = '#FF8800';
+    ctx.beginPath(); ctx.moveTo(x + 10, baseY - 2); ctx.lineTo(x + 14, baseY - 1); ctx.lineTo(x + 10, baseY); ctx.fill();
+    // 眼
+    ctx.fillStyle = '#FFF'; circ(x + 8, baseY - 3, 1.5);
+    ctx.fillStyle = '#111'; circ(x + 8.5, baseY - 3, 0.8);
+}
+
+function drawObstacle(obs) {
+    if (obs.type === 'cat') drawCat(obs.x, GROUND_Y);
+    else if (obs.type === 'postman') drawPostman(obs.x, GROUND_Y);
+    else if (obs.type === 'hydrant') drawHydrant(obs.x, GROUND_Y);
+    else if (obs.type === 'bird') drawBird(obs.x, obs.flyY);
+}
+
+// ==================== 碰撞检测 ====================
+function getDogBox() {
+    if (isDucking) return { x: DOG_X - 22, y: dogY - 26, w: 48, h: 26 };
+    return { x: DOG_X - 18, y: dogY - 52, w: 42, h: 52 };
+}
+
+function getObsBox(obs) {
+    const gy = obs.isFlying ? obs.flyY : GROUND_Y;
+    switch (obs.type) {
+        case 'cat':     return { x: obs.x - 10, y: gy - 32, w: 20, h: 32 };
+        case 'postman': return { x: obs.x - 7,  y: gy - 52, w: 14, h: 52 };
+        case 'hydrant': return { x: obs.x - 9,  y: gy - 28, w: 18, h: 28 };
+        case 'bird':    return { x: obs.x - 13, y: gy - 12, w: 26, h: 14 };
+    }
+}
+
+function collides(a, b) {
+    const m = 5; // 宽容边距
+    return a.x + m < b.x + b.w - m && a.x + a.w - m > b.x + m
+        && a.y + m < b.y + b.h - m && a.y + a.h - m > b.y + m;
+}
+
+// ==================== 游戏逻辑 ====================
+function spawnObstacle() {
+    const pool = ['cat','cat','cat','postman','postman','hydrant','hydrant','bird','bird'];
+    const type = pool[Math.floor(Math.random() * pool.length)];
+    obstacles.push({
+        type, x: canvas.width + 30, flyY: GROUND_Y - 45,
+        isFlying: type === 'bird', passed: false
+    });
+}
+
+function update(dt) {
+    if (state !== 'playing') return;
+    elapsedTime += dt;
+    frameCount++;
+    speed = Math.min(MAX_SPEED, INITIAL_SPEED + SPEED_INCREASE * elapsedTime);
+    distanceTraveled += speed * dt;
+    score = Math.floor(distanceTraveled / 10);
+
+    // 跳跃物理
+    if (isJumping) {
+        dogY += dogVy * dt;
+        dogVy += GRAVITY * dt;
+        if (dogY >= GROUND_Y) { dogY = GROUND_Y; dogVy = 0; isJumping = false; }
+    }
+
+    // 空中按 ↓ 加速下落
+    if (isJumping && isDucking && dogVy < 200) dogVy = 200;
+
+    // 障碍物移动
+    for (const o of obstacles) o.x -= speed * dt;
+    obstacles = obstacles.filter(o => o.x > -60);
+
+    // 障碍物生成
+    spawnTimer -= dt;
+    if (spawnTimer <= 0 && obstacles.length < 4) {
+        spawnObstacle();
+        const mg = Math.max(0.55, MIN_SPAWN_GAP - elapsedTime * 0.015);
+        const xg = Math.max(1.0, MAX_SPAWN_GAP - elapsedTime * 0.025);
+        spawnTimer = mg + Math.random() * (xg - mg);
+    }
+
+    // 碰撞检测
+    const db = getDogBox();
+    for (const o of obstacles) {
+        if (collides(db, getObsBox(o))) { endGame(); return; }
+    }
+
+    // 视差滚动
+    for (const c of clouds)  { c.x -= speed * dt * 0.08; if (c.x < -80) c.x = 880; }
+    for (const h of hills)   { h.x -= speed * dt * 0.15; if (h.x < -200) h.x += 1000; }
+    for (const b of bushes)  { b.x -= speed * dt * 0.4;  if (b.x < -60) b.x += 900; }
+    for (const t of grassTufts) { t.x -= speed * dt;      if (t.x < -30) t.x += 830; }
+}
+
+function endGame() {
+    state = 'gameover';
+    if (score > highScore) highScore = score;
+}
+
+function startGame() {
+    state = 'playing';
+    score = 0; distanceTraveled = 0; speed = INITIAL_SPEED;
+    dogY = GROUND_Y; dogVy = 0; isJumping = false; isDucking = false;
+    obstacles = []; spawnTimer = 0.8; frameCount = 0; elapsedTime = 0;
+    generateDecorations();
+}
+
+// ==================== 画面渲染 ====================
+function drawScoreUI() {
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    rrect(canvas.width - 160, 12, 145, 36, 8);
+    ctx.fillStyle = '#FFF';
+    ctx.font = 'bold 20px "Courier New", monospace';
+    ctx.textAlign = 'right';
+    ctx.fillText('🏃 ' + String(score).padStart(5, '0'), canvas.width - 28, 38);
+    ctx.textAlign = 'start';
+    if (highScore > 0) {
+        ctx.fillStyle = 'rgba(255,215,0,0.85)';
+        ctx.font = '12px Arial';
+        ctx.textAlign = 'right';
+        ctx.fillText('🏆 最高: ' + highScore, canvas.width - 28, 56);
+        ctx.textAlign = 'start';
+    }
+}
+
+function drawStartScreen() {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FFF'; ctx.font = 'bold 42px Arial';
+    ctx.fillText('🐕 小狗跑酷', canvas.width / 2, 95);
+    ctx.fillStyle = '#FFD700'; ctx.font = 'bold 15px Arial';
+    ctx.fillText('像 Chrome 恐龙一样，但更可爱！', canvas.width / 2, 125);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '17px Arial';
+    ctx.fillText('↑ 或 空格键 跳跃     ↓ 蹲下躲避飞鸟', canvas.width / 2, 158);
+    ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.font = '14px Arial';
+    ctx.fillText('🐱 猫（跳）   📬 邮递员（跳）   🚒 消防栓（跳）   🕊️ 飞鸟（蹲）', canvas.width / 2, 185);
+    const a = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+    ctx.fillStyle = `rgba(255,215,0,${a})`; ctx.font = 'bold 22px Arial';
+    ctx.fillText('按 空格键 或 ↑ 开始游戏', canvas.width / 2, 240);
+    ctx.textAlign = 'start';
+}
+
+function drawGameOverScreen() {
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#FF6B6B'; ctx.font = 'bold 40px Arial';
+    ctx.fillText('游戏结束!', canvas.width / 2, 100);
+    ctx.fillStyle = '#FFF'; ctx.font = 'bold 28px Arial';
+    ctx.fillText('得分: ' + score, canvas.width / 2, 150);
+    if (highScore > 0) {
+        ctx.fillStyle = '#FFD700'; ctx.font = '18px Arial';
+        ctx.fillText('🏆 最高分: ' + highScore, canvas.width / 2, 185);
+    }
+    const a = Math.sin(Date.now() * 0.005) * 0.3 + 0.7;
+    ctx.fillStyle = `rgba(255,215,0,${a})`; ctx.font = 'bold 22px Arial';
+    ctx.fillText('按 空格键 或 ↑ 重新开始', canvas.width / 2, 235);
+    ctx.textAlign = 'start';
+}
+
+function render() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawBackground();
+    for (const o of obstacles) drawObstacle(o);
+    const animFrame = isJumping ? 0 : Math.floor(frameCount / 8) % 2;
+    drawDog(DOG_X, dogY, animFrame, isDucking && !isJumping);
+    drawScoreUI();
+    if (state === 'start') drawStartScreen();
+    if (state === 'gameover') drawGameOverScreen();
+}
+
+// ==================== 输入处理 ====================
+function handleJump() {
+    if (state === 'start') { startGame(); return; }
+    if (state === 'gameover') { startGame(); return; }
+    if (!isJumping && !isDucking) { isJumping = true; dogVy = JUMP_VELOCITY; }
+}
+
+function handleDuck(pressed) {
+    if (state !== 'playing') return;
+    isDucking = pressed;
+}
+
+document.addEventListener('keydown', e => {
+    if (e.code === 'Space' || e.code === 'ArrowUp') { e.preventDefault(); handleJump(); }
+    else if (e.code === 'ArrowDown') { e.preventDefault(); handleDuck(true); }
+});
+document.addEventListener('keyup', e => {
+    if (e.code === 'ArrowDown') { e.preventDefault(); handleDuck(false); }
+});
+
+// 触摸支持
+canvas.addEventListener('touchstart', e => {
+    e.preventDefault();
+    const midY = canvas.getBoundingClientRect().top + canvas.clientHeight / 2;
+    if (e.touches[0].clientY < midY) handleJump(); else handleDuck(true);
+});
+canvas.addEventListener('touchend', e => { e.preventDefault(); handleDuck(false); });
+
+// ==================== 主循环 ====================
+let lastTime = 0, accumulator = 0;
+function gameLoop(ts) {
+    if (lastTime === 0) lastTime = ts;
+    let dt = (ts - lastTime) / 1000;
+    lastTime = ts;
+    if (dt > 0.1) dt = 0.1;
+    accumulator += dt;
+    while (accumulator >= FIXED_DT) { update(FIXED_DT); accumulator -= FIXED_DT; }
+    render();
+    requestAnimationFrame(gameLoop);
+}
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>

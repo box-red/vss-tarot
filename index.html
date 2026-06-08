@@ -1,0 +1,361 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>动态粒子互动特效</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background-color: #0b0f19;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        /* 画布占满全屏 */
+        canvas {
+            display: block;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 1;
+        }
+
+        /* 控制面板样式 */
+        .control-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px;
+            border-radius: 12px;
+            color: #fff;
+            width: 280px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        }
+
+        .control-panel h3 {
+            margin-bottom: 15px;
+            font-size: 18px;
+            letter-spacing: 1px;
+            text-align: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+            padding-bottom: 8px;
+        }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+
+        .control-group label {
+            display: block;
+            font-size: 13px;
+            margin-bottom: 5px;
+            color: #ccc;
+        }
+
+        /* 滑动条样式 */
+        .control-group input[type="range"] {
+            width: 100%;
+            accent-color: #00ffcc;
+            cursor: pointer;
+        }
+
+        .value-display {
+            float: right;
+            color: #00ffcc;
+            font-weight: bold;
+        }
+
+        /* 按钮组样式 */
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            flex: 1;
+            background: #00ffcc;
+            border: none;
+            color: #0b0f19;
+            padding: 8px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            background: #00ccff;
+            box-shadow: 0 0 10px rgba(0, 204, 255, 0.5);
+        }
+
+        .btn.active {
+            background: #ff007f;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="particleCanvas"></canvas>
+
+    <div class="control-panel">
+        <h3>粒子控制面板</h3>
+        
+        <div class="control-group">
+            <label>粒子数量: <span id="countVal" class="value-display">200</span></label>
+            <input type="range" id="particleCount" min="50" max="500" value="200">
+        </div>
+
+        <div class="control-group">
+            <label>最大尺寸: <span id="sizeVal" class="value-display">4</span></label>
+            <input type="range" id="maxSize" min="1" max="10" value="4">
+        </div>
+
+        <div class="control-group">
+            <label>基础速度: <span id="speedVal" class="value-display">2</span></label>
+            <input type="range" id="moveSpeed" min="1" max="10" value="2">
+        </div>
+
+        <div class="control-group">
+            <label>鼠标互动模式:</label>
+            <div class="btn-group">
+                <button class="btn active" id="modeRepel">排斥</button>
+                <button class="btn" id="modeAttract">吸引</button>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <button class="btn" id="toggleLine" style="width: 100%; background: rgba(255,255,255,0.2); color: white;">切换粒子连线: 开启</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 页面尺寸自适应
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+        }
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+
+        // 鼠标状态追踪
+        const mouse = {
+            x: null,
+            y: null,
+            radius: 120 // 鼠标影响范围
+        };
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+
+        window.addEventListener('mouseleave', () => {
+            mouse.x = null;
+            mouse.y = null;
+        });
+
+        // 默认控制参数
+        const config = {
+            count: 200,
+            maxSize: 4,
+            speed: 2,
+            mode: 'repel', // 'repel' 排斥, 'attract' 吸引
+            drawLines: true
+        };
+
+        // 粒子类定义
+        class Particle {
+            constructor() {
+                this.reset();
+            }
+
+            // 初始化/重置粒子状态
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * config.maxSize + 1;
+                // 随机运动方向
+                this.baseXSpeed = (Math.random() - 0.5) * config.speed;
+                this.baseYSpeed = (Math.random() - 0.5) * config.speed;
+                this.vx = this.baseXSpeed;
+                this.vy = this.baseYSpeed;
+                // 随机生成极光色系
+                const colors = ['#00ffcc', '#00ccff', '#007fff', '#ff007f', '#a020f0'];
+                this.color = colors[Math.floor(Math.random() * colors.length)];
+            }
+
+            // 更新粒子位置与状态
+            update() {
+                // 边界碰撞检测，超出屏幕则从另一边出现
+                if (this.x > canvas.width) this.x = 0;
+                else if (this.x < 0) this.x = canvas.width;
+                if (this.y > canvas.height) this.y = 0;
+                else if (this.y < 0) this.y = canvas.height;
+
+                // 鼠标互动逻辑
+                if (mouse.x !== null && mouse.y !== null) {
+                    let dx = mouse.x - this.x;
+                    let dy = mouse.y - this.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < mouse.radius) {
+                        // 计算力量走向
+                        let force = (mouse.radius - distance) / mouse.radius;
+                        let forceX = (dx / distance) * force * 5;
+                        let forceY = (dy / distance) * force * 5;
+
+                        if (config.mode === 'repel') {
+                            // 排斥：减去向着鼠标的分量
+                            this.vx -= forceX;
+                            this.vy -= forceY;
+                        } else {
+                            // 吸引：加上向着鼠标的分量
+                            this.vx += forceX;
+                            this.vy += forceY;
+                        }
+                    }
+                }
+
+                // 摩擦力阻尼，防止粒子速度无限增加并使其平滑回归基础速度
+                this.vx += (this.baseXSpeed - this.vx) * 0.05;
+                this.vy += (this.baseYSpeed - this.vy) * 0.05;
+
+                // 移动位置
+                this.x += this.vx;
+                this.y += this.vy;
+            }
+
+            // 绘制粒子
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            }
+        }
+
+        // 粒子群数组
+        let particleArray = [];
+        function initParticles() {
+            particleArray = [];
+            for (let i = 0; i < config.count; i++) {
+                particleArray.push(new Particle());
+            }
+        }
+        initParticles();
+
+        // 绘制粒子间的连线
+        function connectParticles() {
+            if (!config.drawLines) return;
+            let maxDistance = 100;
+            for (let a = 0; a < particleArray.length; a++) {
+                for (let b = a; b < particleArray.length; b++) {
+                    let dx = particleArray[a].x - particleArray[b].x;
+                    let dy = particleArray[a].y - particleArray[b].y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < maxDistance) {
+                        // 距离越近，线条越明显
+                        let opacity = 1 - (distance / maxDistance);
+                        ctx.strokeStyle = `rgba(0, 255, 204, ${opacity * 0.15})`;
+                        ctx.lineWidth = 1;
+                        ctx.beginPath();
+                        ctx.moveTo(particleArray[a].x, particleArray[a].y);
+                        ctx.lineTo(particleArray[b].x, particleArray[b].y);
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        // 动画主循环
+        function animate() {
+            // 每帧清除画布并保持稍微的尾迹效果（把清空透明度调低可以有拖尾）
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let i = 0; i < particleArray.length; i++) {
+                particleArray[i].update();
+                particleArray[i].draw();
+            }
+
+            connectParticles();
+            requestAnimationFrame(animate);
+        }
+        animate();
+
+        // ================= UI 交互与参数绑定 =================
+
+        // 1. 数量调节
+        const countInput = document.getElementById('particleCount');
+        const countVal = document.getElementById('countVal');
+        countInput.addEventListener('input', (e) => {
+            config.count = parseInt(e.target.value);
+            countVal.textContent = config.count;
+            initParticles(); // 重新生成粒子
+        });
+
+        // 2. 尺寸调节
+        const sizeInput = document.getElementById('maxSize');
+        const sizeVal = document.getElementById('sizeVal');
+        sizeInput.addEventListener('input', (e) => {
+            config.maxSize = parseInt(e.target.value);
+            sizeVal.textContent = config.maxSize;
+            // 实时更新已有粒子的基准尺寸
+            particleArray.forEach(p => p.size = Math.random() * config.maxSize + 1);
+        });
+
+        // 3. 速度调节
+        const speedInput = document.getElementById('moveSpeed');
+        const speedVal = document.getElementById('speedVal');
+        speedInput.addEventListener('input', (e) => {
+            config.speed = parseInt(e.target.value);
+            speedVal.textContent = config.speed;
+            // 实时更新已有粒子的基准速度
+            particleArray.forEach(p => {
+                p.baseXSpeed = (Math.random() - 0.5) * config.speed;
+                p.baseYSpeed = (Math.random() - 0.5) * config.speed;
+            });
+        });
+
+        // 4. 模式切换按钮
+        const modeRepel = document.getElementById('modeRepel');
+        const modeAttract = document.getElementById('modeAttract');
+
+        modeRepel.addEventListener('click', () => {
+            config.mode = 'repel';
+            modeRepel.classList.add('active');
+            modeAttract.classList.remove('active');
+        });
+
+        modeAttract.addEventListener('click', () => {
+            config.mode = 'attract';
+            modeAttract.classList.add('active');
+            modeRepel.classList.remove('active');
+        });
+
+        // 5. 连线开关
+        const toggleLineBtn = document.getElementById('toggleLine');
+        toggleLineBtn.addEventListener('click', () => {
+            config.drawLines = !config.drawLines;
+            toggleLineBtn.textContent = `切换粒子连线: ${config.drawLines ? '开启' : '关闭'}`;
+            toggleLineBtn.style.background = config.drawLines ? 'rgba(255,255,255,0.2)' : 'rgba(255, 0, 127, 0.4)';
+        });
+
+    </script>
+</body>
+</html>

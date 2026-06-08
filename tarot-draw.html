@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🔮 塔罗抽卡 — Rider-Waite-Smith</title>
+<style>
+:root{--bg:#0d0d0f;--panel:#16161c;--text:#d0d0d4;--gold:#c9a050;--accent:#7b5ea7;}
+*{margin:0;padding:0;box-sizing:border-box;}
+body{background:var(--bg);overflow:hidden;font-family:'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;user-select:none;-webkit-user-select:none;height:100vh;width:100vw;}
+#three-container{position:fixed;inset:0;z-index:1;}
+
+#toolbar{position:fixed;top:14px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:20;}
+#mode-btn,#cam-indicator{
+    padding:8px 18px;border-radius:20px;border:1px solid rgba(255,255,255,0.18);
+    background:rgba(20,20,28,0.85);color:var(--text);font-size:13px;cursor:pointer;
+    backdrop-filter:blur(12px);transition:all .25s;letter-spacing:.5px;
+}
+#mode-btn:hover{background:rgba(40,40,55,0.9);border-color:var(--gold);color:var(--gold);}
+#mode-btn.gesture-active{background:rgba(123,94,167,0.3);border-color:var(--accent);color:#c0a8e0;}
+#cam-indicator{pointer-events:none;font-size:11px;display:none;}
+#cam-indicator.show{display:block;}.cam-indicator.ok{border-color:#4a8;color:#5c8;}.cam-indicator.err{border-color:#c0392b;color:#e55;}
+
+#meaning-panel{
+    position:fixed;right:16px;top:50%;transform:translateY(-50%);
+    width:240px;max-height:65vh;background:rgba(20,20,28,0.88);border-radius:14px;
+    padding:20px 18px;border:1px solid rgba(255,255,255,0.1);
+    backdrop-filter:blur(14px);color:var(--text);z-index:15;
+    opacity:0;transition:opacity .4s;overflow-y:auto;pointer-events:none;
+}
+#meaning-panel.visible{opacity:1;pointer-events:auto;}
+#meaning-panel .card-title{font-size:18px;font-weight:700;color:var(--gold);margin-bottom:4px;}
+#meaning-panel .card-sub{font-size:11px;color:#888;margin-bottom:12px;}
+#meaning-panel .pos-label{font-size:12px;font-weight:700;color:#7b9;margin:10px 0 4px;}
+#meaning-panel .meaning-text{font-size:13px;line-height:1.6;color:#bbb;}
+#meaning-panel .rev-badge{display:inline-block;background:var(--accent);color:#fff;font-size:10px;padding:2px 8px;border-radius:8px;margin-left:6px;}
+
+#history-panel{
+    position:fixed;bottom:16px;left:50%;transform:translateX(-50%);
+    display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:85vw;
+    z-index:20;padding:10px 16px;background:rgba(14,14,20,0.8);border-radius:14px;
+    border:1px solid rgba(255,255,255,0.08);backdrop-filter:blur(10px);
+    min-height:44px;align-items:center;
+}
+#history-panel .history-item{font-size:11px;padding:4px 10px;border-radius:10px;background:rgba(255,255,255,0.06);color:#aaa;border:1px solid rgba(255,255,255,0.08);white-space:nowrap;}
+#history-panel .hi-name{color:var(--gold);font-weight:600;}
+#history-panel .hi-rev{color:var(--accent);font-size:10px;}
+#history-panel .empty-hint{color:#555;font-size:12px;}
+
+#status-toast{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    font-size:28px;font-weight:300;letter-spacing:6px;color:rgba(255,255,255,0.7);
+    pointer-events:none;opacity:0;transition:opacity .5s;z-index:30;
+}
+#status-toast.show{opacity:1;}
+
+/* 最终结果页 */
+#results-overlay{
+    position:fixed;inset:0;z-index:50;background:rgba(8,8,18,0.94);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    opacity:0;pointer-events:none;transition:opacity 0.8s;
+    backdrop-filter:blur(20px);
+}
+#results-overlay.show{opacity:1;pointer-events:auto;}
+#results-overlay h2{color:var(--gold);font-size:26px;margin-bottom:8px;letter-spacing:3px;}
+#results-overlay .results-sub{color:#777;font-size:13px;margin-bottom:28px;}
+#results-overlay .results-grid{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;max-width:80vw;max-height:55vh;overflow-y:auto;padding:0 20px;}
+#results-overlay .result-card{
+    background:rgba(30,28,40,0.9);border:1px solid rgba(255,255,255,0.1);border-radius:12px;
+    padding:14px 18px;text-align:center;min-width:100px;max-width:140px;
+}
+#results-overlay .result-card .rc-name{color:var(--gold);font-size:14px;font-weight:600;}
+#results-overlay .result-card .rc-pos{font-size:10px;color:#888;margin-top:3px;}
+#results-overlay .result-card .rc-rev{color:var(--accent);}
+#results-overlay .reset-btn{
+    margin-top:28px;padding:10px 30px;border-radius:20px;border:1px solid var(--gold);
+    background:transparent;color:var(--gold);font-size:14px;cursor:pointer;letter-spacing:2px;
+    transition:all .25s;
+}
+#results-overlay .reset-btn:hover{background:rgba(201,160,80,0.15);}
+
+/* 闪光效果 */
+#flash{
+    position:fixed;inset:0;z-index:40;background:radial-gradient(circle,rgba(255,220,140,0.25) 0%,rgba(0,0,0,0) 70%);
+    pointer-events:none;opacity:0;transition:opacity 0.15s;
+}
+#flash.fire{opacity:1;transition:opacity 0s;}
+#flash.fade{opacity:0;transition:opacity 0.8s;}
+
+::-webkit-scrollbar{width:4px;}
+::-webkit-scrollbar-track{background:transparent;}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.12);border-radius:2px;}
+
+@media(max-width:768px){
+    #meaning-panel{right:4px;width:190px;padding:12px 10px;font-size:11px;}
+    #toolbar{top:8px;gap:6px;}#mode-btn{padding:6px 14px;font-size:11px;}
+    #history-panel{bottom:6px;padding:8px 10px;gap:4px;}
+}
+</style>
+</head>
+<body>
+<div id="three-container"></div>
+<div id="flash"></div>
+
+<div id="toolbar">
+    <button id="mode-btn">🖱️ 鼠标模式</button>
+    <span id="cam-indicator">📷 摄像头</span>
+</div>
+
+<div id="meaning-panel">
+    <div class="card-title"></div><div class="card-sub"></div>
+    <div class="pos-label">✨ 正位释义</div><div class="meaning-text upright-meaning"></div>
+    <div class="pos-label">🌑 逆位释义</div><div class="meaning-text reversed-meaning"></div>
+</div>
+
+<div id="history-panel"><span class="empty-hint">等待抽卡…</span></div>
+<div id="status-toast"></div>
+
+<div id="results-overlay">
+    <h2>🔮 塔罗解读</h2>
+    <div class="results-sub">你抽到的所有卡牌</div>
+    <div class="results-grid"></div>
+    <button class="reset-btn">重新开始</button>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils@0.6.1629159505/control_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1620248257/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+
+<script type="importmap">
+{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+const container=document.getElementById('three-container');
+const modeBtn=document.getElementById('mode-btn');
+const camIndicator=document.getElementById('cam-indicator');
+const meaningPanel=document.getElementById('meaning-panel');
+const historyPanel=document.getElementById('history-panel');
+const statusToast=document.getElementById('status-toast');
+const flashEl=document.getElementById('flash');
+const resultsOverlay=document.getElementById('results-overlay');
+const resultsGrid=resultsOverlay.querySelector('.results-grid');
+const resetBtn=resultsOverlay.querySelector('.reset-btn');
+
+// ==================== 牌库 ====================
+const MAJOR_ARCANA=[
+    {id:0,name:'愚者',en:'The Fool',up:'新的开始，冒险与纯真。相信直觉，踏上未知旅程。',rev:'鲁莽冲动，犹豫不决。害怕改变，做出不明智选择。'},
+    {id:1,name:'魔术师',en:'The Magician',up:'创造力与技能。你拥有所需资源，将想法化为现实。',rev:'操纵欺骗，能力未发挥。计划受阻。'},
+    {id:2,name:'女祭司',en:'The High Priestess',up:'直觉与潜意识。倾听内心声音，相信你的第六感。',rev:'忽视直觉，秘密被揭露。与内在失去连接。'},
+    {id:3,name:'皇后',en:'The Empress',up:'丰饶与滋养。创造力繁荣，母性的温暖与关怀。',rev:'依赖过重，创造力枯竭。情感匮乏。'},
+    {id:4,name:'皇帝',en:'The Emperor',up:'权威与秩序。稳定领导力，建立长久结构。',rev:'专制暴政，滥用权力。缺乏自律。'},
+    {id:5,name:'教皇',en:'The Hierophant',up:'传统与信仰。寻求导师指引，遵循精神道路。',rev:'挑战传统，叛逆不羁。盲目遵循教条。'},
+    {id:6,name:'恋人',en:'The Lovers',up:'爱与和谐。重要关系选择，心灵的结合。',rev:'关系破裂，价值观冲突。无法选择。'},
+    {id:7,name:'战车',en:'The Chariot',up:'胜利与决心。意志力驱动前进，掌控局势。',rev:'失控与挫败。方向迷失，侵略过强。'},
+    {id:8,name:'力量',en:'Strength',up:'内在力量与勇气。温柔驯服野兽，耐心胜利。',rev:'软弱无力，自我怀疑。被情绪支配。'},
+    {id:9,name:'隐士',en:'The Hermit',up:'内省与智慧。独自沉思，寻求真理与灵魂深度。',rev:'孤独与孤立。逃避现实，过于封闭。'},
+    {id:10,name:'命运之轮',en:'Wheel of Fortune',up:'命运转折。好运降临，抓住时机迎接改变。',rev:'厄运与阻力。循环负面阶段，无力改变。'},
+    {id:11,name:'正义',en:'Justice',up:'公正与真相。公平裁决，做出正确决定。',rev:'不公与偏见。逃避责任，法律纠纷。'},
+    {id:12,name:'倒吊人',en:'The Hanged Man',up:'牺牲与暂停。换个角度看世界，灵性顿悟。',rev:'徒劳牺牲，停滞不前。不愿放手。'},
+    {id:13,name:'死神',en:'Death',up:'转变与重生。旧事物终结，迎接新生。',rev:'抗拒改变，停滞腐朽。无法释怀过去。'},
+    {id:14,name:'节制',en:'Temperance',up:'平衡与调和。中庸之道，耐心融合对立面。',rev:'失衡与过度。缺乏节制，冲突加剧。'},
+    {id:15,name:'恶魔',en:'The Devil',up:'束缚与欲望。面对阴影，打破枷锁。',rev:'解脱与觉醒。打破不健康依附。'},
+    {id:16,name:'高塔',en:'The Tower',up:'突变与启示。旧结构瓦解，真相的闪电。',rev:'避免灾难，恐惧改变。延缓不可避免。'},
+    {id:17,name:'星星',en:'The Star',up:'希望与疗愈。灵感涌现，光明的未来。',rev:'绝望与怀疑。失去信念，未来迷茫。'},
+    {id:18,name:'月亮',en:'The Moon',up:'幻象与潜意识。面对恐惧，探索未知自我。',rev:'恐惧消散，真相浮现。走出迷惑阴霾。'},
+    {id:19,name:'太阳',en:'The Sun',up:'喜悦与成功。充满活力成就，一切明朗。',rev:'暂时阴霾，缺乏自信。成功在前方等待。'},
+    {id:20,name:'审判',en:'Judgement',up:'觉醒与召唤。重生契机，回应更高使命。',rev:'逃避召唤，无法释怀过去。拒绝反思。'},
+    {id:21,name:'世界',en:'The World',up:'完成与圆满。旅程终点，整合与实现。',rev:'未完成闭环，延迟成就。尚有缺憾。'},
+];
+
+const SUITS=[{name:'权杖',en:'Wands',color:'#e8734a',sym:'🪄'},{name:'圣杯',en:'Cups',color:'#5b8ec9',sym:'🏆'},{name:'宝剑',en:'Swords',color:'#d4c040',sym:'⚔️'},{name:'星币',en:'Pentacles',color:'#5a9a50',sym:'🪙'}];
+const RANKS=['王牌','2','3','4','5','6','7','8','9','10','侍从','骑士','皇后','国王'];
+const RANK_EN=['Ace','2','3','4','5','6','7','8','9','10','Page','Knight','Queen','King'];
+const MINOR_MEANINGS={
+    '王牌':{up:'新的开始与潜能。纯粹创造力与机遇的萌芽。',rev:'延迟开始，错失机会，能量被阻滞。'},
+    '2':{up:'选择与平衡。两种力量调和，做出关键决定。',rev:'失衡与冲突。无法抉择，内部分裂。'},
+    '3':{up:'成长与扩展。初步成就，团队合作与进展。',rev:'过度扩张，缺乏聚焦，成长受阻。'},
+    '4':{up:'稳定与基础。建立安全根基，休息与巩固。',rev:'不稳定，根基动摇，过度保守。'},
+    '5':{up:'冲突与挑战。竞争与挣扎，逆境中成长。',rev:'化解冲突，妥协达成，走出困境。'},
+    '6':{up:'胜利与认可。成功推进，公开赞赏与成就。',rev:'失败与挫折。骄傲自满导致倒退。'},
+    '7':{up:'坚持与挑战。守护立场，面对困难不屈。',rev:'放弃防守，无力抵抗，被动退缩。'},
+    '8':{up:'行动与速度。迅速推进，精力充沛前进。',rev:'停滞与延误。行动受阻，力不从心。'},
+    '9':{up:'坚韧与独立。独自守候，内心强大的毅力。',rev:'疲惫放弃，孤立无助，失去信念。'},
+    '10':{up:'完成与负担。责任重压，亦或圆满达成。',rev:'卸下重担，释怀解脱，重新出发。'},
+    '侍从':{up:'好奇与学习。新技能萌芽，探索的热情。',rev:'懒惰散漫，学习停滞，缺乏专注。'},
+    '骑士':{up:'行动与追逐。激情驱动前进，追求目标。',rev:'鲁莽冲动，缺乏方向，过度急躁。'},
+    '皇后':{up:'滋养与丰盛。内在成熟，创造与关爱。',rev:'依赖与控制。情感勒索，创造力受阻。'},
+    '国王':{up:'掌控与权威。成熟稳健领导，社会责任。',rev:'专制与腐败。滥用权力，缺乏自律。'},
+};
+
+function buildDeck(){
+    const d=MAJOR_ARCANA.map(c=>({...c,type:'major',suit:null,rank:null}));
+    SUITS.forEach((s,si)=>{RANKS.forEach((rk,i)=>{const m=MINOR_MEANINGS[rk]||{up:'…',rev:'…'};
+        d.push({id:22+si*14+i,name:s.name+rk,en:`${RANK_EN[i]} of ${s.en}`,type:'minor',suit:s,rank:rk,up:m.up,rev:m.rev});});});
+    return d;
+}
+
+let fullDeck=buildDeck(), remainingDeck=[...fullDeck], drawnHistory=[], cardObjects=[], activeParticleSystems=[];
+let groupRotation=0; // 整体轮盘旋转角度
+
+// ==================== Three.js场景 ====================
+const scene=new THREE.Scene();
+scene.background=new THREE.Color('#0d0d0f');
+scene.fog=new THREE.Fog('#0d0d0f',8,35);
+
+const camera=new THREE.PerspectiveCamera(50,container.clientWidth/container.clientHeight,0.5,60);
+camera.position.set(0,5,17);camera.lookAt(0,0,0);
+// 视角固定，不可缩放旋转
+
+const renderer=new THREE.WebGLRenderer({antialias:true,alpha:true});
+renderer.setSize(container.clientWidth,container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));
+renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
+container.appendChild(renderer.domElement);
+
+// 视角固定
+renderer.domElement.style.touchAction='none';
+// 灯光
+scene.add(new THREE.AmbientLight('#302840',1.8));
+const kl=new THREE.DirectionalLight('#fff5e8',4.5);kl.position.set(8,16,6);
+kl.castShadow=true;kl.shadow.mapSize.set(1024,1024);kl.shadow.camera.near=0.5;kl.shadow.camera.far=50;
+kl.shadow.camera.left=-15;kl.shadow.camera.right=15;kl.shadow.camera.top=15;kl.shadow.camera.bottom=-5;
+kl.shadow.bias=-0.0001;scene.add(kl);
+scene.add(new THREE.DirectionalLight('#8899cc',1.5).position.set(-4,3,-2));
+scene.add(new THREE.DirectionalLight('#ffccaa',1.8).position.set(0,2,-8));
+
+// 无底座——卡牌直接漂浮于暗空间中
+
+// ==================== 纹理 ====================
+function createCardBackTex(){
+    const c=document.createElement('canvas');c.width=256;c.height=438;const g=c.getContext('2d');
+    g.fillStyle='#1a2250';g.fillRect(0,0,256,438);
+    g.strokeStyle='#c9a050';g.lineWidth=6;g.strokeRect(8,8,240,422);
+    g.strokeStyle='#8b7030';g.lineWidth=2;g.strokeRect(14,14,228,410);
+    g.save();g.translate(128,219);
+    for(let i=0;i<5;i++){g.save();g.rotate(i*Math.PI*2/5-Math.PI/2);g.fillStyle='#c9a050';
+        g.beginPath();g.moveTo(0,-70);g.lineTo(14,-18);g.lineTo(70,0);g.lineTo(14,18);g.lineTo(0,70);g.lineTo(-14,18);g.lineTo(-70,0);g.lineTo(-14,-18);g.closePath();g.fill();g.restore();}
+    g.fillStyle='#1a2250';g.beginPath();g.arc(0,0,48,0,Math.PI*2);g.fill();
+    g.fillStyle='#c9a050';g.beginPath();g.arc(0,0,18,0,Math.PI*2);g.fill();
+    g.fillStyle='#1a2250';g.font='bold 13px serif';g.textAlign='center';g.fillText('✧',0,6);g.restore();
+    g.fillStyle='#8b7030';g.font='24px serif';g.textAlign='center';
+    g.fillText('✦',30,50);g.fillText('✦',226,50);g.fillText('✦',30,410);g.fillText('✦',226,410);
+    return new THREE.CanvasTexture(c);
+}
+
+function createCardFaceTex(cd){
+    const c=document.createElement('canvas');c.width=256;c.height=438;const g=c.getContext('2d');
+    const bg=g.createLinearGradient(0,0,256,438);bg.addColorStop(0,'#f7ecd0');bg.addColorStop(0.5,'#f0e0bc');bg.addColorStop(1,'#e4cc9a');
+    g.fillStyle=bg;g.fillRect(0,0,256,438);
+    g.strokeStyle='#b8943c';g.lineWidth=4;g.strokeRect(10,10,236,418);
+    g.strokeStyle='#8b6b2c';g.lineWidth=1.5;g.strokeRect(16,16,224,406);
+    g.fillStyle='#b8943c';g.font='20px serif';g.textAlign='center';g.fillText('❧',24,42);g.fillText('❧',232,42);g.fillText('❧',24,416);g.fillText('❧',232,416);
+    g.fillStyle='#3a2810';g.font='bold 15px "Georgia","Noto Serif SC",serif';g.textAlign='center';g.fillText(cd.name,128,50);
+    if(cd.type==='minor'&&cd.suit){g.font='12px serif';g.fillStyle=cd.suit.color;g.fillText(cd.suit.sym+' '+cd.suit.name,128,72);}
+    if(cd.type==='major'){const roman=['0','Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ','Ⅷ','Ⅸ','Ⅹ','Ⅺ','Ⅻ','ⅩⅢ','ⅩⅣ','ⅩⅤ','ⅩⅥ','ⅩⅦ','ⅩⅧ','ⅩⅨ','ⅩⅩ','ⅩⅪ'][cd.id]||'';
+        g.fillStyle='#8b6b2c';g.font='bold 48px "Georgia",serif';g.textAlign='center';g.fillText(roman,128,200);}
+    else{g.fillStyle=cd.suit?.color||'#6a5030';g.font='42px serif';g.textAlign='center';g.fillText(cd.suit?.sym||'✦',128,195);
+        g.fillStyle='#3a2810';g.font='bold 28px "Georgia",serif';g.fillText(cd.rank||'',128,235);}
+    g.strokeStyle='#b8943c';g.lineWidth=1.5;g.beginPath();g.moveTo(50,350);g.lineTo(206,350);g.stroke();
+    g.fillStyle='#6a5030';g.font='italic 12px "Georgia",serif';g.textAlign='center';g.fillText('RIDER · WAITE · SMITH',128,374);g.fillText('T A R O T',128,394);
+    return new THREE.CanvasTexture(c);
+}
+
+function tryLoadRealTex(cd,mesh){
+    const urls=[];
+    if(cd.type==='major'){const n=String(cd.id).padStart(2,'0');urls.push(`https://www.sacred-texts.com/tarot/pics/ar${n}.jpg`);urls.push(`https://raw.githubusercontent.com/ekelen/tarot-api/main/public/cards/ar${n}.jpg`);}
+    else{const si=SUITS.findIndex(s=>s.name===cd.suit?.name),ri=RANKS.indexOf(cd.rank);
+        if(si>=0&&ri>=0){const fn=`${['wands','cups','swords','pents'][si]}${String(ri+1).padStart(2,'0')}.jpg`;urls.push(`https://www.sacred-texts.com/tarot/pips/${fn}`);urls.push(`https://raw.githubusercontent.com/ekelen/tarot-api/main/public/cards/${fn}`);}}
+    function tryLoad(i){if(i>=urls.length)return;const img=new Image();img.crossOrigin='anonymous';img.onload=()=>{const cv=document.createElement('canvas');cv.width=img.width;cv.height=img.height;cv.getContext('2d').drawImage(img,0,0);try{const t=new THREE.CanvasTexture(cv);t.colorSpace=THREE.SRGBColorSpace;mesh.material[3].map=t;mesh.material[3].needsUpdate=true;mesh.userData.realTexLoaded=true;}catch(e){tryLoad(i+1);}};img.onerror=()=>tryLoad(i+1);img.src=urls[i];}
+    tryLoad(0);
+}
+
+const cardBackTex=createCardBackTex();cardBackTex.colorSpace=THREE.SRGBColorSpace;
+const cardGeo=new THREE.BoxGeometry(1.6,2.75,0.06,1,1,1);
+
+function createCardObj(cd,isUpright){
+    const ft=createCardFaceTex(cd);ft.colorSpace=THREE.SRGBColorSpace;
+    const edge=new THREE.MeshStandardMaterial({color:'#d4c8a0',roughness:0.4,metalness:0.1});
+    const mats=[edge,edge,new THREE.MeshStandardMaterial({map:cardBackTex,roughness:0.5,metalness:0.05,color:'#fff'}),new THREE.MeshStandardMaterial({map:ft,roughness:0.5,metalness:0.05,color:'#fff'}),edge,edge];
+    const mesh=new THREE.Mesh(cardGeo,mats);mesh.castShadow=mesh.receiveShadow=true;mesh.name=cd.name;
+    mesh.userData={cardData:cd,isUpright,velocity:new THREE.Vector3(),isDragging:false,isHovered:false,isFlipped:false,isConfirmed:false,flipTarget:null,flipSpeed:0,origRotX:null,realTexLoaded:false};
+    tryLoadRealTex(cd,mesh);return mesh;
+}
+
+function layoutCards(){
+    const n=remainingDeck.length;cardObjects.forEach(co=>{if(!co.userData.isConfirmed)scene.remove(co);});cardObjects=[];
+    if(n===0){showResultsOverlay();return;}
+    // 环形轮盘——卡牌围绕中心点排列，正面朝上（背面可见），整体绕Y轴旋转
+    const radius=7.5;
+    for(let i=0;i<n;i++){const cd=remainingDeck[i],isUp=Math.random()<0.5,card=createCardObj(cd,isUp);
+        const baseAngle=(i/n)*Math.PI*2;
+        const y=2.2+Math.sin(i*0.9)*0.7;
+        card.position.set(Math.sin(baseAngle)*radius, y, Math.cos(baseAngle)*radius);
+        // 平放，背面朝上，微倾向着圆心外侧
+        card.rotation.set(-0.25, baseAngle+Math.PI, 0);
+        if(!isUp)card.rotation.z=Math.PI;
+        card.userData.circleAngle=baseAngle;card.userData.circleRadius=radius;
+        card.userData.baseY=y;card.userData.flipTarget=null;card.userData.flipSpeed=0;
+        scene.add(card);cardObjects.push(card);}
+}
+
+// ==================== 💥 爆炸式粒子系统 ====================
+function createExplosion(cardMesh){
+    cardMesh.updateWorldMatrix(true,false);
+    const worldPos=new THREE.Vector3();cardMesh.getWorldPosition(worldPos);
+    const cardCenter=worldPos.clone();
+
+    // 采样卡牌表面顶点
+    const posAttr=cardGeo.getAttribute('position');
+    const samplePts=[];const step=Math.max(1,Math.floor(posAttr.count/400));
+    for(let i=0;i<posAttr.count;i+=step){const v=new THREE.Vector3().fromBufferAttribute(posAttr,i);v.applyMatrix4(cardMesh.matrixWorld);samplePts.push(v);}
+
+    // 创建爆炸粒子（2500+）
+    const count=Math.min(2800, samplePts.length*6);
+    const geo=new THREE.BufferGeometry();
+    const positions=new Float32Array(count*3);
+    const velocities=new Float32Array(count*3);
+    const sizes=new Float32Array(count);
+    const lifetimes=new Float32Array(count);
+
+    for(let i=0;i<count;i++){
+        const src=samplePts[i%samplePts.length];
+        // 初始位置=卡牌表面+微小随机偏移
+        positions[i*3]=src.x+(Math.random()-0.5)*0.15;
+        positions[i*3+1]=src.y+(Math.random()-0.5)*0.15;
+        positions[i*3+2]=src.z+(Math.random()-0.5)*0.15;
+
+        // 爆炸速度：径向向外+向上偏向+随机
+        const dx=src.x-cardCenter.x, dy=src.y-cardCenter.y, dz=src.z-cardCenter.z;
+        const dist=Math.sqrt(dx*dx+dy*dy+dz*dz)+0.01;
+        const speed=1.5+Math.random()*8;
+        velocities[i*3]=(dx/dist)*speed+(Math.random()-0.5)*3;
+        velocities[i*3+1]=(dy/dist)*speed+Math.random()*4+1.5;
+        velocities[i*3+2]=(dz/dist)*speed+(Math.random()-0.5)*3;
+
+        sizes[i]=0.02+Math.random()*0.16;
+        lifetimes[i]=0.6+Math.random()*1.2;
+    }
+
+    geo.setAttribute('position',new THREE.BufferAttribute(positions,3));
+    geo.setAttribute('size',new THREE.BufferAttribute(sizes,1));
+
+    // 辉光贴图
+    const dot=document.createElement('canvas');dot.width=32;dot.height=32;
+    const dg=dot.getContext('2d');const grad=dg.createRadialGradient(16,16,0,16,16,16);
+    grad.addColorStop(0,'rgba(255,245,210,1)');grad.addColorStop(0.15,'rgba(255,200,100,0.9)');grad.addColorStop(0.4,'rgba(255,160,50,0.4)');grad.addColorStop(0.7,'rgba(200,100,20,0.05)');grad.addColorStop(1,'rgba(0,0,0,0)');
+    dg.fillStyle=grad;dg.fillRect(0,0,32,32);
+    const dotTex=new THREE.CanvasTexture(dot);
+
+    const mat=new THREE.PointsMaterial({color:'#f0c060',size:0.08,blending:THREE.AdditiveBlending,depthWrite:false,transparent:true,opacity:0.95,map:dotTex});
+    const points=new THREE.Points(geo,mat);
+    points.userData={elapsed:0,velocities,lifetimes,count};
+
+    scene.add(points);
+    activeParticleSystems.push(points);
+
+    // 屏幕闪光
+    triggerFlash();
+    return points;
+}
+
+function triggerFlash(){
+    flashEl.classList.remove('fade');flashEl.classList.add('fire');
+    requestAnimationFrame(()=>{flashEl.classList.remove('fire');flashEl.classList.add('fade');});
+}
+
+function updateParticleSystems(dt){
+    for(let si=activeParticleSystems.length-1;si>=0;si--){
+        const ps=activeParticleSystems[si];
+        ps.userData.elapsed+=dt;
+        const elapsed=ps.userData.elapsed;
+        const posArr=ps.geometry.attributes.position.array;
+        const velArr=ps.userData.velocities;
+        const lifeArr=ps.userData.lifetimes;
+        const count=ps.userData.count;
+        let anyAlive=false;
+
+        for(let i=0;i<count;i++){
+            const idx=i*3, life=lifeArr[i];
+            if(elapsed>=life){velArr[idx]=velArr[idx+1]=velArr[idx+2]=0;continue;}
+            anyAlive=true;
+            const progress=elapsed/life;
+            // 速度衰减+湍流
+            velArr[idx]*=0.98;velArr[idx+1]*=0.98;velArr[idx+2]*=0.98;
+            velArr[idx]+=Math.sin(elapsed*8+i)*0.3*dt;
+            velArr[idx+1]+=Math.cos(elapsed*7+i)*0.3*dt;
+            velArr[idx+2]+=Math.cos(elapsed*6+i+5)*0.3*dt;
+            posArr[idx]+=velArr[idx]*dt*3;
+            posArr[idx+1]+=velArr[idx+1]*dt*3;
+            posArr[idx+2]+=velArr[idx+2]*dt*3;
+        }
+        ps.geometry.attributes.position.needsUpdate=true;
+        // 整体透明度衰减
+        ps.material.opacity=Math.max(0,0.95-elapsed/1.6);
+
+        if(!anyAlive||elapsed>1.8){scene.remove(ps);ps.geometry.dispose();ps.material.dispose();activeParticleSystems.splice(si,1);}
+    }
+}
+
+// ==================== 射线 ====================
+const raycaster=new THREE.Raycaster();raycaster.far=25;
+function getCardHit(e){
+    raycaster.setFromCamera(new THREE.Vector2((e.clientX/window.innerWidth)*2-1,-(e.clientY/window.innerHeight)*2+1),camera);
+    const hits=raycaster.intersectObjects(cardObjects.filter(co=>co.parent===scene&&!co.userData.isConfirmed),false);
+    return hits.length>0?hits[0]:null;
+}
+
+// ==================== 翻转动画 ====================
+function triggerFlip(cardMesh){
+    if(cardMesh.userData.isConfirmed||cardMesh.userData.isDragging)return;
+    // 从背面翻到正面：绕X轴旋转180°
+    if(cardMesh.userData.isFlipped){
+        // 翻回背面
+        cardMesh.userData.flipTarget=cardMesh.userData.origRotX??(-0.25);
+        cardMesh.userData.isFlipped=false;
+    }else{
+        // 翻到正面
+        cardMesh.userData.origRotX=cardMesh.rotation.x;
+        cardMesh.userData.flipTarget=cardMesh.rotation.x+Math.PI;
+    }
+    cardMesh.userData.flipSpeed=2;
+}
+
+// ==================== 确认抽牌 ====================
+function confirmCard(cardMesh){
+    if(cardMesh.userData.isConfirmed)return;
+    cardMesh.userData.isConfirmed=true;
+    cardMesh.userData.isDragging=false;
+    cardMesh.userData.isFlipped=false;
+    const cd=cardMesh.userData.cardData,isUp=cardMesh.userData.isUpright;
+
+    // 💥 爆炸粒子
+    createExplosion(cardMesh);
+
+    // 卡牌抬起+翻转展示
+    const liftY=cardMesh.position.y+4;
+    cardMesh.userData.targetPos=new THREE.Vector3(cardMesh.position.x,liftY,cardMesh.position.z);
+    cardMesh.userData.targetRot=new THREE.Vector3(-2.5,cardMesh.rotation.y,0);
+    cardMesh.userData.liftStart=performance.now()/1000;
+
+    // UI更新
+    updateMeaningPanel(cd,isUp);
+    addToHistory(cd,isUp);
+    remainingDeck=remainingDeck.filter(d=>d.id!==cd.id);
+    drawnHistory.push({card:cd,upright:isUp});
+
+    // 延迟移除+重新布局
+    setTimeout(()=>{cardObjects=cardObjects.filter(co=>{if(co.userData.isConfirmed){scene.remove(co);return false;}return true;});layoutCards();},2000);
+
+    showToast(isUp?'✨ 正位':'🌑 逆位');
+}
+
+function updateMeaningPanel(cd,isUp){
+    const p=meaningPanel;
+    p.querySelector('.card-title').innerHTML=cd.name+(isUp?'':'<span class="rev-badge">逆位</span>');
+    p.querySelector('.card-sub').textContent=cd.en+(cd.type==='major'?' · 大阿尔卡纳':' · 小阿尔卡纳');
+    p.querySelector('.upright-meaning').textContent=cd.up;
+    p.querySelector('.reversed-meaning').textContent=cd.rev;
+    p.classList.add('visible');
+}
+
+function addToHistory(cd,isUp){
+    const empty=historyPanel.querySelector('.empty-hint');if(empty)empty.remove();
+    const item=document.createElement('span');item.className='history-item';
+    item.innerHTML=`<span class="hi-name">${cd.name}</span> ${isUp?'':'<span class="hi-rev">逆位</span>'}`;
+    historyPanel.appendChild(item);historyPanel.scrollLeft=historyPanel.scrollWidth;
+}
+
+function showToast(msg){statusToast.textContent=msg;statusToast.classList.add('show');clearTimeout(statusToast._to);statusToast._to=setTimeout(()=>statusToast.classList.remove('show'),1500);}
+
+// ==================== 结果页 ====================
+function showResultsOverlay(){
+    resultsGrid.innerHTML='';
+    if(drawnHistory.length===0){resultsGrid.innerHTML='<div style="color:#666;text-align:center">牌库已空，没有抽到任何卡牌</div>';}
+    else{for(const h of drawnHistory){const div=document.createElement('div');div.className='result-card';
+        div.innerHTML=`<div class="rc-name">${h.card.name}</div><div class="rc-pos${h.upright?'':' rc-rev'}">${h.upright?'✨ 正位':'🌑 逆位'}</div>`;resultsGrid.appendChild(div);}}
+    resultsOverlay.classList.add('show');
+}
+
+resetBtn.addEventListener('click',()=>{
+    remainingDeck=[...fullDeck];drawnHistory=[];cardObjects.forEach(co=>scene.remove(co));cardObjects=[];
+    activeParticleSystems.forEach(ps=>{scene.remove(ps);ps.geometry.dispose();ps.material.dispose();});activeParticleSystems=[];
+    historyPanel.innerHTML='<span class="empty-hint">等待抽卡…</span>';
+    meaningPanel.classList.remove('visible');resultsOverlay.classList.remove('show');
+    layoutCards();showToast('🔮 重新开始');
+});
+
+// ==================== 鼠标交互 ====================
+let mouseDragCard=null,mouseDragPlane=new THREE.Plane(new THREE.Vector3(0,1,0),0),mouseDragOffset=new THREE.Vector3(),isMouseDragging=false,mouseMoved=0,mouseDownPos=new THREE.Vector2(),hoverHighlight=null;
+
+renderer.domElement.addEventListener('pointerdown',e=>{
+    if(modeBtn.classList.contains('gesture-active'))return;
+    mouseDownPos.set(e.clientX,e.clientY);mouseMoved=0;
+    const hit=getCardHit(e);
+    if(hit&&e.button===0){mouseDragCard=hit.object;mouseDragCard.userData.isDragging=true;
+        const wp=hit.point.clone();mouseDragPlane.set(new THREE.Vector3(0,1,0),-wp.y);mouseDragOffset.copy(wp).sub(mouseDragCard.position);
+        isMouseDragging=false;}
+});
+
+renderer.domElement.addEventListener('pointermove',e=>{
+    mouseMoved+=Math.abs(e.clientX-mouseDownPos.x)+Math.abs(e.clientY-mouseDownPos.y);
+    if(mouseDragCard){if(mouseMoved>3)isMouseDragging=true;
+        if(isMouseDragging){raycaster.setFromCamera(new THREE.Vector2((e.clientX/window.innerWidth)*2-1,-(e.clientY/window.innerHeight)*2+1),camera);
+            const t=new THREE.Vector3();raycaster.ray.intersectPlane(mouseDragPlane,t);
+            if(t){t.sub(mouseDragOffset);t.y=Math.max(0.3,t.y);mouseDragCard.position.lerp(t,0.7);mouseDragCard.rotation.set(-2.6,mouseDragCard.rotation.y*0.9,0);}}}
+    else{const hit=getCardHit(e);
+        if(hit&&hit.object!==hoverHighlight){resetHover();hoverHighlight=hit.object;hoverHighlight.userData.isHovered=true;hoverHighlight.material.forEach(m=>{if(m.emissive)m.emissive.set('#332010');});}
+        else if(!hit&&hoverHighlight){resetHover();hoverHighlight=null;}}
+});
+
+renderer.domElement.addEventListener('pointerup',e=>{
+    if(mouseDragCard){if(!isMouseDragging&&e.button===0){triggerFlip(mouseDragCard);}
+        else if(isMouseDragging){mouseDragCard.userData.velocity.set((Math.random()-0.5)*0.3,0,(Math.random()-0.5)*0.3);}
+        mouseDragCard.userData.isDragging=false;mouseDragCard=null;isMouseDragging=false;}
+});
+
+renderer.domElement.addEventListener('contextmenu',e=>{e.preventDefault();
+    if(modeBtn.classList.contains('gesture-active'))return;
+    const hit=getCardHit(e);if(hit&&!hit.object.userData.isConfirmed)confirmCard(hit.object);
+});
+
+function resetHover(){if(hoverHighlight){hoverHighlight.userData.isHovered=false;hoverHighlight.material.forEach(m=>{if(m.emissive)m.emissive.set('#000');});}}
+
+// ==================== MediaPipe手势 ====================
+let hands=null,gestureMode=false,lastGesture='UNKNOWN',gestureStable=0,handLandmarks=null,videoEl=null;
+
+function initMediaPipe(){
+    videoEl=document.createElement('video');videoEl.style.display='none';document.body.appendChild(videoEl);
+    hands=new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}`});
+    hands.setOptions({maxNumHands:1,modelComplexity:1,minDetectionConfidence:0.7,minTrackingConfidence:0.6});
+    hands.onResults(r=>{handLandmarks=(r.multiHandLandmarks&&r.multiHandLandmarks.length>0)?r.multiHandLandmarks[0]:null;});
+    const cam=new Camera(videoEl,{onFrame:async()=>{await hands.send({image:videoEl});},width:640,height:480});
+    cam.start().then(()=>{camIndicator.textContent='📷 手势就绪';camIndicator.className='show ok';}).catch(()=>{camIndicator.textContent='📷 不可用';camIndicator.className='show err';gestureMode=false;updateModeBtn();});
+}
+
+function classifyGesture(lm){if(!lm)return'UNKNOWN';
+    const tt=lm[4],it=lm[8],ip=lm[6],mt=lm[12],mp=lm[10],rt=lm[16],rp=lm[14],pt=lm[20],pp=lm[18];
+    const iu=it.y<ip.y-0.02,mu=mt.y<mp.y-0.02,ru=rt.y<rp.y-0.02,pu=pt.y<pp.y-0.02,pd=Math.hypot(tt.x-it.x,tt.y-it.y);
+    if(pd<0.06)return'PINCH';if(!iu&&!mu&&!ru&&!pu)return'FIST';if(iu&&!mu&&!ru&&!pu)return'POINT';if(iu&&mu&&ru&&pu)return'OPEN';return'UNKNOWN';}
+
+function getHandRay(){if(!handLandmarks)return null;const tip=handLandmarks[8];const rc=new THREE.Raycaster();rc.setFromCamera(new THREE.Vector2((tip.x-0.5)*2,-(tip.y-0.5)*2),camera);return rc.ray;}
+
+function updateGesture(dt){
+    if(!gestureMode||!handLandmarks)return;const g=classifyGesture(handLandmarks);
+    if(g===lastGesture){gestureStable+=dt;}else{gestureStable=0;lastGesture=g;}
+    const ray=getHandRay();if(!ray)return;
+    raycaster.set(ray.origin,ray.direction);
+    const hits=raycaster.intersectObjects(cardObjects.filter(co=>co.parent===scene&&!co.userData.isConfirmed),false);
+    if(g==='POINT'&&hits.length>0){const card=hits[0].object;card.userData.velocity.set(0,0,0);card.userData.isHovered=true;card.material.forEach(m=>{if(m.emissive)m.emissive.set('#332010');});}
+    if(g==='PINCH'&&hits.length>0){const card=hits[0].object;card.userData.isDragging=true;card.position.lerp(hits[0].point.clone().setY(3.0),0.5);card.rotation.set(-2.6,card.rotation.y*0.9,0);}
+    else if(g!=='PINCH'){cardObjects.forEach(co=>{if(co.userData.isDragging&&!co.userData.isConfirmed){co.userData.isDragging=false;co.userData.velocity.set((Math.random()-0.5)*0.3,0,(Math.random()-0.5)*0.3);}});}
+    if(g==='FIST'&&gestureStable>0.4&&hits.length>0&&!hits[0].object.userData.isConfirmed){confirmCard(hits[0].object);gestureStable=0;}
+}
+
+function updateModeBtn(){if(gestureMode){modeBtn.textContent='✋ 手势模式';modeBtn.classList.add('gesture-active');}else{modeBtn.textContent='🖱️ 鼠标模式';modeBtn.classList.remove('gesture-active');}}
+modeBtn.addEventListener('click',()=>{if(!hands){initMediaPipe();setTimeout(()=>{if(handLandmarks!==undefined||videoEl){gestureMode=true;updateModeBtn();showToast('✋ 手势模式');}},1500);return;}gestureMode=!gestureMode;updateModeBtn();showToast(gestureMode?'✋ 手势模式':'🖱️ 鼠标模式');});
+
+// ==================== 每帧更新 ====================
+function updateCards(dt){
+    groupRotation+=dt*0.28; // 整体轮盘缓慢旋转
+    const t=performance.now()/1000;
+
+    for(const co of cardObjects){
+        if(co.userData.isConfirmed){
+            const tp=co.userData.targetPos;if(tp){co.position.lerp(tp,0.06);co.rotation.x+=(co.userData.targetRot.x-co.rotation.x)*0.06;}
+            continue;}
+        if(co.userData.isDragging)continue;
+
+        // 翻转动画（点击触发，从背面翻到正面）
+        if(co.userData.flipTarget!==null){
+            co.userData.flipSpeed+=(co.userData.flipTarget-co.rotation.x)*8*dt;
+            co.userData.flipSpeed*=0.85;
+            co.rotation.x+=co.userData.flipSpeed*dt*5;
+            if(Math.abs(co.rotation.x-co.userData.flipTarget)<0.01){
+                co.rotation.x=co.userData.flipTarget;
+                co.userData.flipTarget=null;co.userData.flipSpeed=0;
+                co.userData.isFlipped=true;
+            }
+        }
+
+        // 跟随轮盘旋转
+        const a=co.userData.circleAngle+groupRotation;
+        const r=co.userData.circleRadius||7;
+        const by=co.userData.baseY||2.2;
+        const bob=Math.sin(t*0.6+co.userData.circleAngle)*0.2;
+        const tx=Math.sin(a)*r, tz=Math.cos(a)*r;
+        co.position.x+=(tx-co.position.x)*0.08;
+        co.position.z+=(tz-co.position.z)*0.08;
+        co.position.y+=((by+bob)-co.position.y)*0.04;
+        // 卡片自身朝向：平放微倾
+        if(co.userData.flipTarget===null&&!co.userData.isFlipped){
+            const trY=a+Math.PI;
+            co.rotation.y+=(trY-co.rotation.y)*0.06;
+        }
+
+        const vel=co.userData.velocity;
+        if(vel.length()>0.001){co.position.x+=vel.x*dt;co.position.z+=vel.z*dt;vel.multiplyScalar(0.94);if(vel.length()<0.002)vel.set(0,0,0);}
+    }
+}
+
+// ==================== 主循环 ====================
+const clock=new THREE.Clock();
+function animate(){
+    requestAnimationFrame(animate);
+    const dt=Math.min(clock.getDelta(),0.1);
+        updateCards(dt);
+    if(gestureMode)updateGesture(dt);
+    updateParticleSystems(dt);
+    renderer.render(scene,camera);
+}
+
+window.addEventListener('resize',()=>{camera.aspect=container.clientWidth/container.clientHeight;camera.updateProjectionMatrix();renderer.setSize(container.clientWidth,container.clientHeight);});
+
+function init(){layoutCards();meaningPanel.classList.remove('visible');showToast('🔮 右键确认 · 爆炸抽卡');requestAnimationFrame(animate);}
+init();
+console.log('%c🔮 塔罗抽卡 %c| %c左键旋转 %c| %c拖拽预览 %c| %c右键确认%c💥爆炸粒子',
+    'color:#c9a050;font-size:16px;','','color:#aaa;','','color:#aaa;','','color:#aaa;','color:#f80;');
+</script>
+</body>
+</html>
