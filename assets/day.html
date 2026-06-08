@@ -15,19 +15,24 @@
             background-color: #07050f;
             background-image: radial-gradient(circle at center, #130f26 0%, #07050f 100%);
             height: 100vh;
+            height: 100dvh;
             display: flex;
             flex-direction: column;
             justify-content: center;
             align-items: center;
             overflow: hidden;
+            position: fixed;
+            inset: 0;
             font-family: 'Helvetica Neue', Arial, sans-serif;
             color: #fff;
             user-select: none;
             -webkit-user-select: none;
+            touch-action: none;
+            -webkit-touch-callout: none;
         }
 
         #particleCanvas {
-            position: absolute;
+            position: fixed;
             top: 0;
             left: 0;
             width: 100%;
@@ -37,15 +42,18 @@
         }
 
         .ui-layer {
-            position: relative;
+            position: fixed;
+            inset: 0;
             z-index: 2;
             display: flex;
             flex-direction: column;
             align-items: center;
             width: 100%;
             height: 100vh;
+            height: 100dvh;
             justify-content: space-between;
             padding: 40px 0;
+            overflow: hidden;
         }
 
         .hint-text {
@@ -77,6 +85,9 @@
             display: flex;
             justify-content: center;
             align-items: center;
+            touch-action: none;
+            -webkit-user-select: none;
+            user-select: none;
         }
 
 
@@ -562,8 +573,8 @@
             .hint-text { font-size: 0.85rem; letter-spacing: 1px; }
 
             /* UI层 */
-            .ui-layer { padding: 20px 0; }
-            .stage-2d { height: 55vh; }
+            .ui-layer { padding: 16px 0 12px; }
+            .stage-2d { height: 58vh; }
 
             /* 历史面板 */
             .history-toggle { top: 10px; right: 10px; width: 36px; height: 36px; font-size: 1rem; }
@@ -870,7 +881,12 @@
             wrapper.addEventListener('click', (e) => {
                 e.stopPropagation();
                 if (hasSelected) {
-                    if (selectedCard === wrapper) reShuffle();
+                    if (selectedCard === wrapper) {
+                        reShuffle();
+                    } else {
+                        // 点击其他卡牌：先关闭当前选中的卡牌
+                        dismissCard();
+                    }
                     return;
                 }
 
@@ -956,14 +972,20 @@
         });
 
         let touchStartX = 0;
-        window.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
-        window.addEventListener('touchmove', (e) => {
+        container.addEventListener('touchstart', (e) => {
+            if (hasSelected) return;
+            touchStartX = e.touches[0].clientX;
+            e.preventDefault();
+        }, { passive: false });
+        container.addEventListener('touchmove', (e) => {
+            if (hasSelected) return;
             const touchX = e.touches[0].clientX;
-            const deltaX = touchStartX - touchX; 
-            currentXOffset -= deltaX * 1.2; 
+            const deltaX = touchStartX - touchX;
+            currentXOffset -= deltaX * 1.2;
             touchStartX = touchX;
             updateLinearLayout();
-        });
+            e.preventDefault();
+        }, { passive: false });
 
         // 初始状态往左偏置 2.5 张牌的物理步长
         // 使得一开始屏幕上正中间就完美展示前 6 张大牌，并且左右双向都可以无限拉动！
@@ -993,7 +1015,7 @@
             });
 
             element.classList.add('flipped');
-            hintText.innerHTML = `命运启示：<span style="color:#ffd700">${card.name}（${isUpright?'正位':'逆位'}）</span><br><span style='font-size:0.9rem;color:#bba2cd;'>再次点击卡牌重新洗入，点击空白处金芒消散</span>`;
+            hintText.innerHTML = `命运启示：<span style="color:#ffd700">${card.name}（${isUpright?'正位':'逆位'}）</span><br><span style='font-size:0.9rem;color:#bba2cd;'>再次点击卡牌洗入重抽，点击空白处收回</span>`;
 
             // 记录到浏览历史
             addToHistory(card, isUpright);
@@ -1011,23 +1033,42 @@
             }, 400);
         }
 
-        function vanishCard() {
+        function dismissCard() {
             if (!hasSelected || !selectedCard) return;
-            
+
+            // 粒子消散动画
             const rect = selectedCard.getBoundingClientRect();
             explodeParticles(rect);
 
-            selectedCard.classList.add('vanished');
-            hintText.innerHTML = "星芒消散，天机重归...";
+            // 重置卡牌状态
+            hasSelected = false;
+            selectedCard.classList.remove('flipped');
+            cardElements.forEach(c => c.classList.remove('hide-others'));
+            selectedCard = null;
 
+            // 恢复提示文字
+            hintText.innerHTML = '任意方向划动紫金牌阵，点击正中央的卡牌探寻命运';
+            document.getElementById('sub-hint').innerText = '无限星轮已就绪';
+
+            // 重绘布局
+            updateLinearLayout();
+        }
+
+        function reshuffleAll() {
+            hintText.innerHTML = "正在重组紫金星轮...";
+            if (selectedCard) {
+                selectedCard.style.transition = "transform 0.4s ease, opacity 0.4s";
+                selectedCard.style.transform = `scale(0)`;
+            }
             setTimeout(() => {
+                deck.sort(() => 0.5 - Math.random());
                 location.reload();
-            }, 600);
+            }, 400);
         }
 
         document.body.addEventListener('click', (e) => {
             if (hasSelected && !e.target.closest('.card-wrapper')) {
-                vanishCard();
+                dismissCard();
             }
         });
 
