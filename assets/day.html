@@ -972,19 +972,24 @@
         });
 
         let touchStartX = 0;
+        let touchMoved = false;
         container.addEventListener('touchstart', (e) => {
             if (hasSelected) return;
             touchStartX = e.touches[0].clientX;
-            e.preventDefault();
-        }, { passive: false });
+            touchMoved = false;
+        }, { passive: true });
         container.addEventListener('touchmove', (e) => {
             if (hasSelected) return;
             const touchX = e.touches[0].clientX;
             const deltaX = touchStartX - touchX;
-            currentXOffset -= deltaX * 1.2;
-            touchStartX = touchX;
-            updateLinearLayout();
-            e.preventDefault();
+            // 只有实际滑动超过 5px 才接管事件，否则留给 click
+            if (Math.abs(deltaX) > 5) {
+                touchMoved = true;
+                currentXOffset -= deltaX * 1.2;
+                touchStartX = touchX;
+                updateLinearLayout();
+                e.preventDefault();
+            }
         }, { passive: false });
 
         // 初始状态往左偏置 2.5 张牌的物理步长
