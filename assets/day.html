@@ -116,11 +116,20 @@
 
         /* 动态可见度控制 */
         .card-wrapper.visible-range {
-            opacity: 0.65; 
+            opacity: 0.65;
+            pointer-events: auto;
         }
         .card-wrapper.center-focus {
             opacity: 1;
-            box-shadow: 0 0 40px rgba(255, 215, 0, 0.7); 
+            box-shadow: 0 0 40px rgba(255, 215, 0, 0.7);
+            pointer-events: auto;
+        }
+
+        /* 抽牌期间隐藏其他无关卡牌 */
+        .card-wrapper.hide-others {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            transform: translate(0px, 0px) scale(0) !important;
         }
 
         .card-front, .card-back {
@@ -314,13 +323,6 @@
         .card-wrapper.flipped .card-front {
             transform: rotateY(0deg);
             z-index: 3;
-        }
-
-        /* 抽牌期间隐藏其他无关卡牌 */
-        .card-wrapper.hide-others {
-            opacity: 0 !important;
-            pointer-events: none;
-            transform: translate(0px, 0px) scale(0) !important;
         }
 
         /* 粒子消散状态 */
@@ -894,32 +896,33 @@
             wrapper._cardData = card;
             wrapper.innerHTML = renderCardFace(card, isUpright);
 
-            wrapper.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (hasSelected) {
-                    if (selectedCard === wrapper) {
-                        reShuffle();
-                    } else {
-                        // 点击其他卡牌：先关闭当前选中的卡牌
-                        dismissCard();
-                    }
-                    return;
-                }
-
-                // 获取该卡牌在无限机制下的当前虚拟 X 坐标
-                const calculatedX = getInfiniteX(idx);
-
-                // 如果没在正中间，点击时直接丝滑驱动对齐到正中央
-                if (Math.abs(calculatedX) > 15) {
-                    smoothScrollToCard(calculatedX);
-                    return;
-                }
-
-                selectCard(wrapper, card, isUpright);
-            });
-
             container.appendChild(wrapper);
             cardElements.push(wrapper);
+        });
+
+        // --- 事件委托：统一在容器上处理所有卡牌点击 ---
+        container.addEventListener('click', (e) => {
+            const wrapper = e.target.closest('.card-wrapper');
+            if (!wrapper) return;
+
+            const idx = parseInt(wrapper.dataset.index);
+            const card = deck[idx];
+
+            if (hasSelected) {
+                if (selectedCard === wrapper) {
+                    reShuffle();
+                } else {
+                    dismissCard();
+                }
+                return;
+            }
+
+            const calculatedX = getInfiniteX(idx);
+            if (Math.abs(calculatedX) > 15) {
+                smoothScrollToCard(calculatedX);
+            } else {
+                selectCard(wrapper, card, wrapper._isUpright);
+            }
         });
 
         // 核心数学函数：传入卡牌的初始序号，结合当前滚动量，输出无缝取模后的循环 2D 坐标
@@ -952,7 +955,7 @@
                 card.classList.remove('center-focus', 'visible-range');
 
                 // 视野裁剪：只渲染可见视口内的 6-7 张牌，其它看不见的全部安全裁剪掉
-                if (distanceFromCenter < stepDistance * 3.8) {
+                if (distanceFromCenter < stepDistance * 5) {
                     card.classList.add('visible-range');
                     
                     // 当有某张牌无限接近中心轴线时，锁定天命
